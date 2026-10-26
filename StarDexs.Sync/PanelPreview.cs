@@ -18,6 +18,8 @@ internal static class PanelPreview
         public void ChangeFolder() { }
         public void PutBackPrevious() { }
         public void RemoveFile() { }
+        public void CheckForUpdates() { }
+        public void Update() { }
         public void Quit() { }
     }
 
@@ -27,7 +29,7 @@ internal static class PanelPreview
         PanelView[] views =
         [
             new("Downloading your file…", SyncBar.Look.Running, 0.6, null, accounts, true, true, false, true, true),
-            new("Installed your file for 4.10.2-live.12913470.", SyncBar.Look.Hit, 1, "Last sync 2:14 PM", accounts, true, true, false, true, false),
+            new("Installed your file for 4.10.2-live.12913470. Restart the game to see it.", SyncBar.Look.Hit, 1, "Last sync 2:14 PM", accounts, true, true, false, true, false, "0.4.0"),
             new("Couldn't reach stardexs.com. Try again in a moment.", SyncBar.Look.Missed, 0.4, "Last sync 2:16 PM", accounts, true, true, true, true, false),
         ];
         var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 16, Margin = new Thickness(16) };

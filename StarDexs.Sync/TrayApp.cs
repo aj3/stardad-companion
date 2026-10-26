@@ -35,6 +35,9 @@ internal sealed class TrayApp : IPanelActions
     private readonly StateStore _store;
     private readonly SyncApi _api;
     private readonly SyncEngine _engine;
+    private readonly Updater _updater;
+    /// <summary>A newer signed release, once a sync or "Check for updates" found one.</summary>
+    private Release? _release;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _quit = new();
     private TrayPanel? _panel;
@@ -56,6 +59,7 @@ internal sealed class TrayApp : IPanelActions
         _store = new StateStore(_dataFolder, new DpapiProtector());
         _api = new SyncApi(SyncApi.CreateClient(Site(), _version));
         _engine = new SyncEngine(_api, _store, new InstallWriter(_dataFolder));
+        _updater = new Updater(SyncApi.CreateClient(Site(), _version));
     }
 
     // Release builds only ever talk to stardexs.com. Debug builds can point at a local copy of the site.
@@ -230,7 +234,7 @@ internal sealed class TrayApp : IPanelActions
             && Version.TryParse(_version, out var mine) && newest > mine)
         {
             _toldUpdate = true;
-            Balloon("A new StarDexs Companion is available", $"Version {latest} is on stardexs.com. Download it there when you're ready.");
+            _ = FindUpdateAsync(quiet: true);
         }
     }
 
@@ -428,7 +432,7 @@ internal sealed class TrayApp : IPanelActions
         var state = _store.Load();
         var accounts = state.Accounts.OrderBy(a => a.Value.Name, StringComparer.CurrentCultureIgnoreCase).Select(a => (a.Key, a.Value.Name)).ToList();
         return new PanelView(_status, _look, _share, _lastSync, accounts, GameFolder.IsLive(state.GameFolder),
-            state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy);
+            state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy, _release?.Version.ToString(3));
     }
 
     private unsafe void ShowPanel()
@@ -459,6 +463,51 @@ internal sealed class TrayApp : IPanelActions
     void IPanelActions.ChangeFolder() => Ask(() => { if (ChooseFolder(null)) Post(WatchForGameUpdates); });
     void IPanelActions.PutBackPrevious() => Ask(PutBackPrevious);
     void IPanelActions.RemoveFile() => Ask(RemoveFile);
+    void IPanelActions.CheckForUpdates() => _ = FindUpdateAsync(quiet: false);
+    void IPanelActions.Update() => _ = UpdateAsync();
+
+    // ---- updating, only when the player asks --------------------------------------------------------------
+
+    /// <summary>Asks stardexs.com for the newest signed release; offers it in the panel if it's newer.</summary>
+    private async Task FindUpdateAsync(bool quiet)
+    {
+        if (!quiet) SetStatus("Checking for updates…");
+        Release? found = null;
+        try { found = await _updater.NewestAsync(Version.Parse(_version), _quit.Token); }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) { if (!quiet) SetStatus("Couldn't reach stardexs.com. Try again in a moment."); return; }
+        Post(() =>
+        {
+            _release = found;
+            if (found is not null)
+            {
+                _status = $"StarDexs Companion {found.Version.ToString(3)} is ready. Open this panel and press Update.";
+                Balloon("A new StarDexs Companion is ready", $"Version {found.Version.ToString(3)} is signed and ready. Click the tray icon and press Update.");
+            }
+            else if (!quiet) _status = $"You have the newest StarDexs Companion ({_version}).";
+            Refresh();
+        });
+    }
+
+    /// <summary>Downloads the signed release, swaps it in, and starts it; this copy then closes.</summary>
+    private async Task UpdateAsync()
+    {
+        if (_release is not { } release || Environment.ProcessPath is not { } exe || _busy) return;
+        _busy = true;
+        SetStatus($"Updating to {release.Version.ToString(3)}…");
+        var problem = await _updater.InstallAsync(release, exe, _quit.Token);
+        if (problem is not null)
+        {
+            Post(() => { _busy = false; _status = problem; Refresh(); Balloon("StarDexs Companion", problem, warning: true); });
+            return;
+        }
+        Post(() =>
+        {
+            try { Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = false })?.Dispose(); }
+            catch (Win32Exception) { _busy = false; _status = "Updated. Start StarDexs Companion again to use it."; Refresh(); return; }
+            ((IPanelActions)this).Quit();
+        });
+    }
+
     void IPanelActions.Quit()
     {
         _quit.Cancel();

@@ -9,7 +9,8 @@ namespace StarDexs.Sync;
 /// <summary>What the panel shows; the tray app builds one each time it opens or something changes.</summary>
 internal sealed record PanelView(
     string Status, SyncBar.Look Look, double Share, string? LastSync,
-    IReadOnlyList<(string Id, string Name)> Accounts, bool HasFolder, bool InstallAgreed, bool NeedsAccess, bool HasInstalled, bool Busy);
+    IReadOnlyList<(string Id, string Name)> Accounts, bool HasFolder, bool InstallAgreed, bool NeedsAccess, bool HasInstalled, bool Busy,
+    string? UpdateTo = null);
 
 /// <summary>What the panel's buttons do; the tray app does it.</summary>
 internal interface IPanelActions
@@ -23,6 +24,8 @@ internal interface IPanelActions
     void ChangeFolder();
     void PutBackPrevious();
     void RemoveFile();
+    void CheckForUpdates();
+    void Update();
     void Quit();
 }
 
@@ -135,6 +138,7 @@ internal sealed class TrayPanel : Window
         }
 
         _menu.Children.Clear();
+        if (view.UpdateTo is { } version) Item($"Update to {version}", _actions.Update, enabled: !view.Busy, accent: true);
         Item(view.Accounts.Count == 0 ? "Link your account…" : "Link another account…", _actions.Link);
         if (view.Accounts.Count > 0 && view.HasFolder && !view.InstallAgreed) Item("Allow installing files…", _actions.AllowInstalling, accent: true);
         if (view.NeedsAccess) Item("Allow access to the game folder…", _actions.AllowAccess, accent: true);
@@ -142,6 +146,7 @@ internal sealed class TrayPanel : Window
         Item("Change game folder…", _actions.ChangeFolder);
         Item("Put previous file back…", _actions.PutBackPrevious, enabled: view.HasFolder && view.HasInstalled && !view.Busy);
         Item("Remove StarDexs from the game…", _actions.RemoveFile, enabled: view.HasFolder && view.HasInstalled && !view.Busy);
+        Item("Check for updates", _actions.CheckForUpdates, enabled: !view.Busy);
         Item("Quit", _actions.Quit);
     }
 

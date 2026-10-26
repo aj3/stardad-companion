@@ -21,7 +21,8 @@ Windows backend is included.
 
 ## It only acts when you ask
 
-It doesn't check in on a timer, listen on a network port, or update itself.
+It doesn't check in on a timer, listen on a network port, or update itself
+without you pressing **Update**.
 Nobody else can make it do anything, not even stardexs.com's own staff: the
 website has no way to reach your PC. The app only talks to stardexs.com when
 you press **Send to my PC** (or **Sync** in its menu), and only for an account
@@ -123,21 +124,40 @@ it.
 The app sends only the PC's name, which is shown on your account. You can
 unlink the PC from either side: the website's account page, or the app's menu.
 
+## Updates
+
+When a sync, or **Check for updates** in the panel, finds a newer release, the
+panel offers **Update to x.y.z**. The update happens only when you press it.
+
+Each release is signed with StarDexs' release key (ECDSA P-256), on the
+maintainer's PC; the private key never goes anywhere else. The public half is
+built into the app (`Updater.ReleaseKey`):
+
+```
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEXBFazEisW/LQvPtUqhTjkeDxaSs04SWzT1VHURNF/9LlbAJwjKcv//Y1rOwia+84yXwdyuvW94o/JwqvX8RWqA==
+```
+
+`stardexs.com/downloads/companion.json` names the release, its SHA-256 and the
+signature over both (see `Updater.SignedText`). The app installs an update
+only if:
+
+- the signature checks out;
+- the version is newer than its own;
+- the download's SHA-256 matches.
+
+So even someone in control of the website couldn't hand you a program that
+wasn't signed with that key, or roll you back to an older one.
+
 ## Checking a download
 
-Planned for the first release:
-
-- Each release on stardexs.com will list its SHA-256 hash and be signed by
-  AJ Solutions, LLC. Windows will show that name as the publisher.
-- Each release will be built by GitHub Actions from a tagged commit, with a
-  published build attestation. That lets anyone confirm the download came from
-  that exact source.
-
-To check the code yourself, build the tagged commit with the .NET 10 SDK:
+Each release's SHA-256 is on stardexs.com and in `companion.json`. To check
+the code, build the commit for that release with the .NET 10 SDK:
 
 ```
 dotnet publish StarDexs.Sync -c Release
 ```
+
+Windows code signing (so Windows names the publisher) is planned.
 
 ## Layout
 

@@ -67,7 +67,7 @@ public sealed class InstallWriter(string dataFolder, Func<bool>? gameRunning = n
         catch (UnauthorizedAccessException) { return new(WriteOutcome.NeedsPermission, "Windows won't let StarDexs Companion write to the game folder yet."); }
         catch (IOException exception) { return new(WriteOutcome.Failed, $"Couldn't write the file: {exception.Message}"); }
         Journal($"installed {patch} sha256={sha} into {live}");
-        return new(WriteOutcome.Written, $"Installed your file for {patch}.", sha);
+        return new(WriteOutcome.Written, $"Installed your file for {patch}. Restart the game to see it.", sha);
     }
 
     /// <summary>
@@ -90,7 +90,7 @@ public sealed class InstallWriter(string dataFolder, Func<bool>? gameRunning = n
         catch (UnauthorizedAccessException) { return new(WriteOutcome.NeedsPermission, "Windows won't let StarDexs Companion change the game folder yet."); }
         catch (IOException exception) { return new(WriteOutcome.Failed, $"Couldn't remove the file: {exception.Message}"); }
         Journal($"removed sha256={ours} from {live}");
-        return new(WriteOutcome.Written, "Took your StarDexs file out of the game. It shows the game's own text again.");
+        return new(WriteOutcome.Written, "Took your StarDexs file out of the game. Restart the game to see its own text again.");
     }
 
     /// <summary>

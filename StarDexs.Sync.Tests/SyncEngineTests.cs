@@ -196,7 +196,7 @@ public class SyncEngineTests
         // The next sync installs the current file again.
         Assert.True((await setup.Engine.RunAsync(One, CancellationToken.None)).Installed);
 
-        Assert.Equal("Took your StarDexs file out of the game. It shows the game's own text again.", setup.Engine.Remove().Message);
+        Assert.Equal("Took your StarDexs file out of the game. Restart the game to see its own text again.", setup.Engine.Remove().Message);
         Assert.False(File.Exists(GameFolder.GlobalIniPath(setup.Install.Live)));
     }
 

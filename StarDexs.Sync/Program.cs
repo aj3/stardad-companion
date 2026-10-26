@@ -37,7 +37,13 @@ internal static class Program
 
         var syncNow = SyncLink.IsSyncRequest(args);
         var account = SyncLink.Account(args);
-        using var single = new Mutex(initiallyOwned: true, @"Local\StarDexsSync", out var first);
+        // Started by an update: the old copy is closing, so wait for it (a few seconds at most), then tidy up after it.
+        var updated = args.Contains("--updated");
+        using var single = new Mutex(initiallyOwned: false, @"Local\StarDexsSync");
+        bool first;
+        try { first = single.WaitOne(updated ? TimeSpan.FromSeconds(15) : TimeSpan.Zero); }
+        catch (AbandonedMutexException) { first = true; }
+        if (updated && Environment.ProcessPath is { } self) Updater.TidyUp(self);
         if (!first)
         {
             // Already running: pass a "Send to my PC" press on to it.

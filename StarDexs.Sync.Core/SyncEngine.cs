@@ -118,7 +118,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
             // Settings unknown: the next "Send to my PC" installs the current file again.
             Installed(state, account!, previous.Patch, null, result.Sha256!);
             await api.InstalledAsync(token, previous.Patch, result.Sha256!, cancel);
-            return Done(state, new SyncReport($"Put back your previous file (for {previous.Patch}).", Installed: true));
+            return Done(state, new SyncReport($"Put back your previous file (for {previous.Patch}). Restart the game to see it.", Installed: true));
         }
         catch (NotLinkedException) { return new SyncReport("This PC was unlinked from that account.", NotLinked: true); }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)

@@ -49,14 +49,14 @@ public sealed class SyncState
     /// <summary>The account the last sync was for; "Sync now" in the tray uses it.</summary>
     public string? LastAccount { get; set; }
     public string? GameFolder { get; set; }
-    /// <summary>The player agreed to let StarDexs Sync install files into <see cref="GameFolder"/>.</summary>
+    /// <summary>The player agreed to let StarDexs Companion install files into <see cref="GameFolder"/>.</summary>
     public bool InstallAgreed { get; set; }
     /// <summary>What's in the game folder now: which account's file, for which patch and settings, and its hash.</summary>
     public string? InstalledAccount { get; set; }
     public string? InstalledPatch { get; set; }
     public string? InstalledSettings { get; set; }
     public string? InstalledSha { get; set; }
-    /// <summary>The player said once to replace a global.ini StarDexs Sync didn't put there.</summary>
+    /// <summary>The player said once to replace a global.ini StarDexs Companion didn't put there.</summary>
     public bool ReplaceUnknownOnce { get; set; }
     /// <summary>The game build already told about, so a game update is announced once.</summary>
     public string? NoticedBuild { get; set; }

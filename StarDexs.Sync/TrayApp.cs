@@ -31,7 +31,7 @@ internal sealed class TrayApp
     private readonly string? _account;
     private readonly string _version = typeof(TrayApp).Assembly.GetName().Version?.ToString(3) ?? "0";
     private readonly string _dataFolder =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StarDexs", "Sync");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StarDexs", "Companion");
     private readonly StateStore _store;
     private readonly SyncApi _api;
     private readonly SyncEngine _engine;
@@ -81,7 +81,7 @@ internal sealed class TrayApp
             if (RegisterClassExW(&windowClass) == 0) return 1;
         }
         // A window that's never shown: it only receives the icon's clicks and the menu's commands.
-        _window = CreateWindowExW(0, ClassName, "StarDexs Sync", 0, 0, 0, 0, 0, 0, 0, instance, 0);
+        _window = CreateWindowExW(0, ClassName, "StarDexs Companion", 0, 0, 0, 0, 0, 0, 0, instance, 0);
         if (_window == 0) return 1;
         _icon = LoadImageW(instance, IDI_APPLICATION, IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
         if (_icon == 0) _icon = LoadImageW(0, IDI_APPLICATION, IMAGE_ICON, 0, 0, LR_SHARED | LR_DEFAULTSIZE);
@@ -90,7 +90,7 @@ internal sealed class TrayApp
         var state = _store.Load();
         if (state.Accounts.Count == 0 || !GameFolder.IsLive(state.GameFolder)) Ask(Setup);
         else if (_syncNow) _ = SyncAsync(_account, manual: true);
-        else Balloon("StarDexs Sync is ready", "Press \"Send to my PC\" in your stardexs.com account when you want your file.");
+        else Balloon("StarDexs Companion is ready", "Press \"Send to my PC\" in your stardexs.com account when you want your file.");
         WatchForGameUpdates();
 
         MSG message;
@@ -180,7 +180,7 @@ internal sealed class TrayApp
         if (report.Installed) Balloon("Your StarDexs file is installed", report.Message);
         else if (report.WaitingForGame)
         {
-            Balloon("StarDexs Sync", "Your file goes in as soon as you close the game.");
+            Balloon("StarDexs Companion", "Your file goes in as soon as you close the game.");
             _ = FinishAfterGameClosesAsync(account);
         }
         else if (report.UnknownFile) Ask(() => ReplaceUnknown(account));
@@ -189,20 +189,20 @@ internal sealed class TrayApp
         else if (report.NeedsPermission && !_toldAccess)
         {
             _toldAccess = true;
-            Balloon("StarDexs Sync needs your permission", "Right-click its icon and choose \"Allow access to the game folder\".", warning: true);
+            Balloon("StarDexs Companion needs your permission", "Right-click its icon and choose \"Allow access to the game folder\".", warning: true);
         }
         else if (manual)
         {
             var sent = report.NewBlueprints + report.NewCompleted > 0
                 ? $" Sent {report.NewBlueprints} new blueprints and {report.NewCompleted} finished contracts."
                 : "";
-            Balloon("StarDexs Sync", report.Message + sent);
+            Balloon("StarDexs Companion", report.Message + sent);
         }
         if (!_toldUpdate && report.HelperLatest is { } latest && Version.TryParse(latest, out var newest)
             && Version.TryParse(_version, out var mine) && newest > mine)
         {
             _toldUpdate = true;
-            Balloon("A new StarDexs Sync is available", $"Version {latest} is on stardexs.com. Download it there when you're ready.");
+            Balloon("A new StarDexs Companion is available", $"Version {latest} is on stardexs.com. Download it there when you're ready.");
         }
     }
 
@@ -295,7 +295,7 @@ internal sealed class TrayApp
     private void AllowInstalling()
     {
         var agreed = Dialogs.Ask(
-            "Can StarDexs Sync put your StarDexs file into the game folder?\n\n" +
+            "Can StarDexs Companion put your StarDexs file into the game folder?\n\n" +
             "It changes only:\n" +
             "  •  data\\Localization\\english\\global.ini (your file)\n" +
             "  •  the language lines in user.cfg\n\n" +
@@ -308,7 +308,7 @@ internal sealed class TrayApp
     private void ReplaceUnknown(string? account)
     {
         if (!Dialogs.Ask(
-                "There's a global.ini in your game folder that StarDexs Sync didn't put there " +
+                "There's a global.ini in your game folder that StarDexs Companion didn't put there " +
                 "(maybe from another tool, or changed by hand).\n\n" +
                 "Replace it with your StarDexs file? The old one isn't kept."))
         {
@@ -324,8 +324,8 @@ internal sealed class TrayApp
         var live = _store.Load().GameFolder;
         if (!GameFolder.IsLive(live)) return;
         if (!Dialogs.Confirm(
-                "Windows doesn't let StarDexs Sync write to your game folder yet.\n\n" +
-                "Next, Windows asks for administrator permission once. StarDexs Sync then lets your Windows account change only:\n" +
+                "Windows doesn't let StarDexs Companion write to your game folder yet.\n\n" +
+                "Next, Windows asks for administrator permission once. StarDexs Companion then lets your Windows account change only:\n" +
                 "  •  the data\\Localization\\english folder (where your file goes)\n" +
                 "  •  user.cfg (the language lines)\n\n" +
                 "Nothing else in the game folder changes."))
@@ -355,7 +355,7 @@ internal sealed class TrayApp
 
     private void RemoveFile()
     {
-        if (!Dialogs.Confirm("Take your StarDexs file out of the game? The game shows its own text again.\n\nOnly the global.ini StarDexs Sync installed is removed. \"Send to my PC\" puts it back."))
+        if (!Dialogs.Confirm("Take your StarDexs file out of the game? The game shows its own text again.\n\nOnly the global.ini StarDexs Companion installed is removed. \"Send to my PC\" puts it back."))
             return;
         Post(() => _ = RunAsync(() => Task.FromResult(_engine.Remove()), report => Show(report, null, manual: true)));
     }
@@ -490,7 +490,7 @@ internal sealed class TrayApp
         Shell_NotifyIconW(NIM_MODIFY, &data);
     }
 
-    private string Tip() => Shorten("StarDexs Sync: " + _status, 127);
+    private string Tip() => Shorten("StarDexs Companion: " + _status, 127);
 
     private static string Shorten(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 

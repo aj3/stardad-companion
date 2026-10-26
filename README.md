@@ -1,4 +1,4 @@
-# StarDexs Sync
+# StarDexs Companion
 
 A small Windows tray app that puts your StarDexs file into the game when you
 press **Send to my PC** in your stardexs.com account. The code is published so
@@ -90,7 +90,7 @@ that one file. The app never runs anything it downloads.
 
 The app runs as you. Windows may stop it writing to your game folder, for
 example under Program Files. If so, the app asks once whether to run
-`StarDexsSync.exe --grant`. Windows then shows its own administrator prompt.
+`StarDexsCompanion.exe --grant`. Windows then shows its own administrator prompt.
 
 That step gives your Windows account permission to change only:
 

@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- StarDexs Sync: a tray icon that keeps a player's StarDexs file current. Plain Win32 through LibraryImport, no UI framework. -->
+  <!-- StarDexs Companion: a tray icon that keeps a player's StarDexs file current. Plain Win32 through LibraryImport, no UI framework. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -7,10 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <AssemblyName>StarDexsSync</AssemblyName>
+    <AssemblyName>StarDexsCompanion</AssemblyName>
     <RootNamespace>StarDexs.Sync</RootNamespace>
     <Version>0.1.0</Version>
-    <Product>StarDexs Sync</Product>
+    <Product>StarDexs Companion</Product>
     <Company>AJ Solutions, LLC</Company>
     <Description>Keeps your StarDexs file up to date after every patch.</Description>
     <ApplicationIcon>stardexs.ico</ApplicationIcon>

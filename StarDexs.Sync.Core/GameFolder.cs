@@ -26,7 +26,7 @@ public static partial class GameFolder
     public static string GlobalIniTempPath(string live) => GlobalIniPath(live) + ".stardexs-tmp";
 
     /// <summary>
-    /// The only files StarDexs Sync may write: global.ini (and its temporary file) in the english language
+    /// The only files StarDexs Companion may write: global.ini (and its temporary file) in the english language
     /// folder, and user.cfg. Anything else is refused, and so is a language folder that's really a link to
     /// somewhere else on the PC.
     /// </summary>
@@ -35,14 +35,14 @@ public static partial class GameFolder
         var full = Path.GetFullPath(path);
         var allowed = new[] { GlobalIniPath(live), GlobalIniTempPath(live), UserCfgPath(live) }.Select(Path.GetFullPath);
         if (!allowed.Contains(full, StringComparer.OrdinalIgnoreCase))
-            throw new OutsideGameFilesException($"StarDexs Sync only writes global.ini and user.cfg, not {Path.GetFileName(full)}.");
+            throw new OutsideGameFilesException($"StarDexs Companion only writes global.ini and user.cfg, not {Path.GetFileName(full)}.");
         if (!full.Equals(Path.GetFullPath(UserCfgPath(live)), StringComparison.OrdinalIgnoreCase))
         {
             for (var folder = new DirectoryInfo(Path.GetDirectoryName(full)!);
                  folder is not null && !folder.FullName.Equals(Path.GetFullPath(live).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
                  folder = folder.Parent)
                 if (folder.Exists && folder.Attributes.HasFlag(FileAttributes.ReparsePoint))
-                    throw new OutsideGameFilesException($"{folder.FullName} points somewhere else on this PC, so StarDexs Sync won't write there.");
+                    throw new OutsideGameFilesException($"{folder.FullName} points somewhere else on this PC, so StarDexs Companion won't write there.");
         }
     }
 
@@ -68,7 +68,7 @@ public static partial class GameFolder
     public static string? PatchBuild(string? patch) =>
         patch?[(patch.LastIndexOf('.') + 1)..] is { Length: > 0 } build && build.All(char.IsAsciiDigit) ? build : null;
 
-    /// <summary>The only files StarDexs Sync reads: Game.log, the logs in logbackups, and build_manifest.id.</summary>
+    /// <summary>The only files StarDexs Companion reads: Game.log, the logs in logbackups, and build_manifest.id.</summary>
     public static bool IsReadableLog(string live, string path)
     {
         var full = Path.GetFullPath(path);
@@ -112,5 +112,5 @@ public static partial class GameFolder
     }
 }
 
-/// <summary>A write StarDexs Sync refuses to make: not one of its two files, or a folder that leads elsewhere.</summary>
+/// <summary>A write StarDexs Companion refuses to make: not one of its two files, or a folder that leads elsewhere.</summary>
 public sealed class OutsideGameFilesException(string message) : UnauthorizedAccessException(message);

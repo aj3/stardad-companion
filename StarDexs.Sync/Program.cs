@@ -31,7 +31,7 @@ internal static class Program
         {
             // Already running: pass a "Send to my PC" press on to it.
             if (syncNow) TrayApp.AskRunningCopyToSync(account);
-            else Dialogs.Tell("StarDexs Sync is already running. Look for its icon by the clock.");
+            else Dialogs.Tell("StarDexs Companion is already running. Look for its icon by the clock.");
             return 0;
         }
         return new TrayApp(syncNow, account).Run();

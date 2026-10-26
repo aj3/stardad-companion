@@ -5,7 +5,7 @@ namespace StarDexs.Sync;
 /// <summary>Plain Windows message boxes and the folder picker, always on top so they're never lost behind the game.</summary>
 internal static unsafe class Dialogs
 {
-    private const string Title = "StarDexs Sync";
+    private const string Title = "StarDexs Companion";
 
     public static void Tell(string text, bool warning = false) =>
         MessageBoxW(0, text, Title, MB_OK | MB_SETFOREGROUND | MB_TOPMOST | (warning ? MB_ICONWARNING : MB_ICONINFORMATION));

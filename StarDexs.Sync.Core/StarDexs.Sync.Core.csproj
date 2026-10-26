@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- StarDexs Sync's logic, with no user interface: reading logs, finding the game, writing safely, and talking to stardexs.com. -->
+  <!-- StarDexs Companion's logic, with no user interface: reading logs, finding the game, writing safely, and talking to stardexs.com. -->
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>

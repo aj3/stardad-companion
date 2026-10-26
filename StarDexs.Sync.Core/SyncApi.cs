@@ -9,7 +9,7 @@ public sealed record LinkStart(string Code, string Poll, Uri LinkPage);
 /// <summary>A link the player approved: this PC's token for their account, the account's public id and name.</summary>
 public sealed record LinkReady(string Token, string Account, string Name);
 /// <param name="Account">Which account the token belongs to (its public id).</param>
-/// <param name="HelperLatest">The newest StarDexs Sync version on stardexs.com, so the app can mention an update.</param>
+/// <param name="HelperLatest">The newest StarDexs Companion version on stardexs.com, so the app can mention an update.</param>
 public sealed record SyncStatus(string? Patch, string Settings, bool HasSettings, string? Account = null, string? HelperLatest = null);
 public sealed record SyncFile(byte[] Data, string Patch, string Settings);
 
@@ -17,7 +17,7 @@ public sealed record SyncFile(byte[] Data, string Patch, string Settings);
 public sealed class NotLinkedException : Exception;
 
 /// <summary>
-/// The only network traffic StarDexs Sync makes, all to stardexs.com and only when the player asks:
+/// The only network traffic StarDexs Companion makes, all to stardexs.com and only when the player asks:
 /// linking, asking whether the player's file is current, downloading it (or the previous one), and sending
 /// blueprint names, completed contract titles and the installed file's hash. Nothing else about the PC,
 /// the game or the player is sent.
@@ -29,7 +29,7 @@ public sealed class SyncApi(HttpClient http)
     public static HttpClient CreateClient(Uri site, string version)
     {
         var client = new HttpClient { BaseAddress = site, Timeout = TimeSpan.FromSeconds(90) };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("StarDexs-Sync", version));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("StarDexs-Companion", version));
         return client;
     }
 

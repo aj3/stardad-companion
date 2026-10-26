@@ -6,7 +6,7 @@ namespace StarDexs.Sync.Core;
 /// <summary>
 /// The one step that needs administrator rights, run only after the player agrees: give their own Windows
 /// account permission to change the game's english language folder and its user.cfg. Nothing else in the
-/// game folder is touched, and no part of StarDexs Sync keeps running as administrator.
+/// game folder is touched, and no part of StarDexs Companion keeps running as administrator.
 /// </summary>
 public static class FolderAccess
 {

@@ -32,7 +32,7 @@ internal static partial class SyncLink
     public static void Register()
     {
         using var root = Registry.CurrentUser.CreateSubKey(Key);
-        root.SetValue("", "URL:StarDexs Sync");
+        root.SetValue("", "URL:StarDexs Companion");
         root.SetValue("URL Protocol", "");
         using var icon = root.CreateSubKey("DefaultIcon");
         icon.SetValue("", $"\"{Environment.ProcessPath}\",0");

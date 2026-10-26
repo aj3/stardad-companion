@@ -122,6 +122,40 @@ public class InstallWriterTests
         Assert.True(InstallWriter.LooksLikeGlobalIni(Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(Text)).ToArray()));
 
     [Fact]
+    public void Accepts_the_few_lines_the_game_itself_runs_over()
+    {
+        // Like the game's own file: one entry whose text goes on over several real lines.
+        var lines = Enumerable.Range(0, 600).Select(i => $"key_{i}=Value {i}").ToList();
+        lines.Insert(300, "Carrying Capacity: 150K SCU");
+        lines.Insert(301, "Core Compatibility: Heavy");
+        Assert.True(InstallWriter.LooksLikeGlobalIni(Encoding.UTF8.GetBytes(string.Join("\r\n", lines))));
+
+        // Mostly not key=value lines: not game text.
+        var prose = Enumerable.Range(0, 50).Select(i => $"just some words {i}").Prepend("a=1");
+        Assert.False(InstallWriter.LooksLikeGlobalIni(Encoding.UTF8.GetBytes(string.Join("\n", prose))));
+        Assert.False(InstallWriter.LooksLikeGlobalIni(Encoding.UTF8.GetBytes("a=1\nb=\u0007bell\n")));
+    }
+
+    [Fact]
+    public void Updates_the_existing_user_cfg_whatever_its_case_and_never_makes_a_second_one()
+    {
+        using var install = new FakeInstall();
+        var upper = Path.Combine(install.Live, "USER.cfg");
+        File.WriteAllText(upper, "r_DisplayInfo = 1\ng_language = french\n");
+        var writer = new InstallWriter(install.Data, () => false);
+
+        Assert.Equal(WriteOutcome.Written, writer.Install(install.Live, Ini, "4.10", ours: null).Outcome);
+
+        var cfgs = Directory.GetFiles(install.Live, "*.cfg");
+        Assert.Equal(["USER.cfg"], cfgs.Select(Path.GetFileName));
+        Assert.Equal("r_DisplayInfo = 1\ng_language = english\ng_languageAudio = english\n", File.ReadAllText(upper));
+        // Already right: left alone.
+        var written = File.GetLastWriteTimeUtc(upper);
+        writer.Install(install.Live, Encoding.UTF8.GetBytes("a=2\n"), "4.11", ours: InstallWriter.Sha256(Ini));
+        Assert.Equal(written, File.GetLastWriteTimeUtc(upper));
+    }
+
+    [Fact]
     public void Refuses_a_folder_that_is_not_the_game()
     {
         using var install = new FakeInstall();

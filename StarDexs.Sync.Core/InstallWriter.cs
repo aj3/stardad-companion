@@ -94,22 +94,29 @@ public sealed class InstallWriter(string dataFolder, Func<bool>? gameRunning = n
     }
 
     /// <summary>
-    /// Whatever stardexs.com sends must be what the game reads: UTF-8 text of "key=value" lines, nothing
-    /// binary. So even a compromised server could only ever put text in the one file.
+    /// Whatever stardexs.com sends must be what the game reads: UTF-8 text, nothing binary (no control
+    /// characters but tabs and line breaks), made of "key=value" lines. The game's own file has a few
+    /// entries whose text runs over several lines, so a handful of lines without "=" are allowed, but no
+    /// more than one in a hundred, and it must start with a "key=value" line. A program, an error page or
+    /// anything else that isn't game text fails, so even a compromised server could only put text in the file.
     /// </summary>
     public static bool LooksLikeGlobalIni(byte[] content)
     {
-        if (content.Length is 0 or > MaxFileBytes || content.AsSpan().Contains((byte)0)) return false;
+        if (content.Length is 0 or > MaxFileBytes) return false;
         string text;
         try { text = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(content); }
         catch (DecoderFallbackException) { return false; }
+        if (text.Any(c => c < ' ' && c is not '\t' and not '\r' and not '\n')) return false;
+        long entries = 0, others = 0;
         foreach (var line in text.AsSpan().EnumerateLines())
         {
-            var trimmed = line.TrimStart('﻿').Trim();
+            var trimmed = line.TrimStart('\uFEFF').Trim();
             if (trimmed.IsEmpty || trimmed[0] == ';') continue;
-            if (trimmed.IndexOf('=') <= 0) return false;
+            if (trimmed.IndexOf('=') > 0) entries++;
+            else if (entries == 0) return false;
+            else others++;
         }
-        return true;
+        return entries > 0 && others * 100 <= entries;
     }
 
     // A temporary file in the same folder, flushed, then swapped in: the game never sees half a file.

@@ -82,6 +82,18 @@ public static partial class GameFolder
     public static IEnumerable<string> FromLauncherLog(string text) =>
         LivePath().Matches(text).Select(m => m.Value).Reverse().Distinct(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// The LIVE folder for whatever the player picked: LIVE itself, or StarCitizen, or Roberts Space Industries
+    /// (or RSI) above it. Null when there's no Data.p4k in any of those.
+    /// </summary>
+    public static string? ResolveLive(string? picked, Func<string, bool>? isLive = null)
+    {
+        isLive ??= IsLive;
+        if (string.IsNullOrWhiteSpace(picked)) return null;
+        string[][] below = [[], ["LIVE"], ["StarCitizen", "LIVE"], ["Roberts Space Industries", "StarCitizen", "LIVE"], ["RSI", "StarCitizen", "LIVE"]];
+        return below.Select(parts => Path.Combine([picked, .. parts])).FirstOrDefault(isLive);
+    }
+
     /// <summary>The first LIVE folder that exists: the launcher's log first, then common places.</summary>
     public static string? Find(Func<string, bool>? isLive = null)
     {

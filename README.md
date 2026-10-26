@@ -5,6 +5,20 @@ press **Send to my PC** in your stardexs.com account. The code is published so
 you can check exactly what it does. See [LICENSE](LICENSE): you can read it and
 build it to check it, but not copy or redistribute it.
 
+## Installing
+
+Download the installer from stardexs.com/companion. It:
+
+- shows the terms ([installer/License.rtf](installer/License.rtf)), which you
+  accept before it installs;
+- installs for your Windows account only, with no administrator prompt, into
+  `%LOCALAPPDATA%\Programs\StarDexs Companion`;
+- adds Desktop and Start menu shortcuts and the `stardexs-sync:` link.
+
+Uninstall it from Windows Settings; that removes the shortcuts and the link
+too. The installer is built with WiX v5 from
+[installer/Package.wxs](installer/Package.wxs).
+
 ## Its panel
 
 Click or right-click the tray icon to open a panel in the website's colours.

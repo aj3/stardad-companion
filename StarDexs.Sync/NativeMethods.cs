@@ -16,7 +16,6 @@ internal static unsafe partial class NativeMethods
     public const uint MB_OK = 0x0, MB_OKCANCEL = 0x1, MB_YESNO = 0x4, MB_ICONINFORMATION = 0x40, MB_ICONQUESTION = 0x20, MB_ICONWARNING = 0x30, MB_SETFOREGROUND = 0x10000, MB_TOPMOST = 0x40000;
     public const int IDOK = 1, IDYES = 6;
     public const uint IMAGE_ICON = 1, LR_DEFAULTSIZE = 0x40, LR_SHARED = 0x8000;
-    public const uint BIF_RETURNONLYFSDIRS = 0x1, BIF_NEWDIALOGSTYLE = 0x40;
     public const uint WM_NULL = 0x0000, NIN_SELECT = 0x0400, NIN_KEYSELECT = 0x0401, NIN_BALLOONUSERCLICK = 0x0405;
     public const int SM_CXSMICON = 49, SM_CYSMICON = 50;
     public const nint IDI_APPLICATION = 32512;
@@ -62,16 +61,6 @@ internal static unsafe partial class NativeMethods
         public uint dwInfoFlags;
         public Guid guidItem;
         public nint hBalloonIcon;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct BROWSEINFOW
-    {
-        public nint hwndOwner, pidlRoot;
-        public char* pszDisplayName, lpszTitle;
-        public uint ulFlags;
-        public nint lpfn, lParam;
-        public int iImage;
     }
 
     [LibraryImport("user32.dll", SetLastError = true)]
@@ -141,16 +130,6 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int MessageBoxW(nint hwnd, string text, string caption, uint type);
-
-    [LibraryImport("shell32.dll")]
-    public static partial nint SHBrowseForFolderW(BROWSEINFOW* info);
-
-    [LibraryImport("shell32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool SHGetPathFromIDListW(nint pidl, char* path);
-
-    [LibraryImport("ole32.dll")]
-    public static partial void CoTaskMemFree(nint pointer);
 
     [LibraryImport("user32.dll")]
     public static partial int GetSystemMetrics(int index);

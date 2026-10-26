@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using StarDexs.Sync.Core;
 using static StarDexs.Sync.NativeMethods;
@@ -303,15 +304,25 @@ internal sealed class TrayApp : IPanelActions
         return false;
     }
 
+    /// <summary>
+    /// The game folder: the one found on this PC if the player confirms it, otherwise one they pick (any folder
+    /// from Roberts Space Industries down to LIVE; LIVE is found inside it). Not for the main thread.
+    /// </summary>
     private bool ChooseFolder(string? found)
     {
-        var folder = found is not null && Dialogs.Ask($"Is this your game's LIVE folder?\n\n{found}") ? found : null;
+        var current = _store.Load().GameFolder;
+        string? folder = null;
+        if (found is not null && !string.Equals(found, current, StringComparison.OrdinalIgnoreCase))
+            folder = Dialogs.Ask($"Found your game here:\n\n{found}\n\nUse this folder?") ? found : null;
+        else if (found is not null && !Dialogs.Ask($"StarDexs Companion is using your game at:\n\n{found}\n\nPick a different folder?"))
+            return false;
         while (folder is null)
         {
-            var picked = Dialogs.PickFolder("Choose your game's LIVE folder (the one with Data.p4k in it).");
+            var picked = PickFolder();
             if (picked is null) return false;
-            if (GameFolder.IsLive(picked)) folder = picked;
-            else Dialogs.Tell("That folder has no Data.p4k in it. Choose the LIVE folder, for example ...\\StarCitizen\\LIVE.", warning: true);
+            folder = GameFolder.ResolveLive(picked);
+            if (folder is null)
+                Dialogs.Tell("There's no game in that folder. Pick your StarCitizen folder (or the LIVE folder inside it).", warning: true);
         }
         Update(state =>
         {
@@ -460,7 +471,18 @@ internal sealed class TrayApp : IPanelActions
     void IPanelActions.AllowInstalling() => Ask(() => { AllowInstalling(); Post(() => _ = SyncAsync(null, manual: true)); });
     void IPanelActions.AllowAccess() => Ask(AllowAccess);
     void IPanelActions.OpenSite() => Open(SyncApi.DefaultSite);
-    void IPanelActions.ChangeFolder() => Ask(() => { if (ChooseFolder(null)) Post(WatchForGameUpdates); });
+    void IPanelActions.ChangeFolder() => Ask(() => { if (ChooseFolder(GameFolder.Find())) Post(WatchForGameUpdates); });
+
+    /// <summary>Windows' own (modern) folder picker, opened from the UI thread; waits here for the answer.</summary>
+    private string? PickFolder()
+    {
+        if (_panel is null) return null;
+        var picked = Dispatcher.UIThread.InvokeAsync(() => _panel.StorageProvider.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions
+        {
+            Title = "Choose your StarCitizen folder", AllowMultiple = false,
+        })).GetAwaiter().GetResult();
+        return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+    }
     void IPanelActions.PutBackPrevious() => Ask(PutBackPrevious);
     void IPanelActions.RemoveFile() => Ask(RemoveFile);
     void IPanelActions.CheckForUpdates() => _ = FindUpdateAsync(quiet: false);
@@ -480,7 +502,7 @@ internal sealed class TrayApp : IPanelActions
             _release = found;
             if (found is not null)
             {
-                _status = $"StarDexs Companion {found.Version.ToString(3)} is ready. Open this panel and press Update.";
+                _status = $"StarDexs Companion {found.Version.ToString(3)} is ready to install.";
                 Balloon("A new StarDexs Companion is ready", $"Version {found.Version.ToString(3)} is signed and ready. Click the tray icon and press Update.");
             }
             else if (!quiet) _status = $"You have the newest StarDexs Companion ({_version}).";

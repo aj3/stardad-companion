@@ -99,6 +99,21 @@ public class GameFolderTests
     }
 
     [Fact]
+    public void Finds_LIVE_inside_whatever_folder_was_picked()
+    {
+        using var install = new FakeInstall();
+        Assert.Equal(install.Live, GameFolder.ResolveLive(install.Live));
+        Assert.Equal(install.Live, GameFolder.ResolveLive(install.Root)); // the folder above LIVE
+        var rsi = Path.Combine(install.Root, "rsi");
+        var deeper = Path.Combine(rsi, "StarCitizen", "LIVE");
+        Directory.CreateDirectory(deeper);
+        File.WriteAllBytes(Path.Combine(deeper, "Data.p4k"), [0]);
+        Assert.Equal(deeper, GameFolder.ResolveLive(rsi));
+        Assert.Null(GameFolder.ResolveLive(Path.Combine(install.Live, "nowhere")));
+        Assert.Null(GameFolder.ResolveLive(null));
+    }
+
+    [Fact]
     public void A_folder_without_Data_p4k_is_not_the_game()
     {
         using var install = new FakeInstall();

@@ -42,6 +42,11 @@ internal sealed class TrayPanel : Window
     private readonly TextBlock _last = Small("", Palette.Soft);
     private readonly StackPanel _accounts = new() { Spacing = 6 };
     private readonly StackPanel _menu = new() { Spacing = 2 };
+    private readonly Button _update = new()
+    {
+        HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
+        Padding = new Thickness(10, 7), FontWeight = FontWeight.SemiBold, IsVisible = false,
+    };
     private PanelView? _view;
 
     public TrayPanel(IPanelActions actions)
@@ -80,6 +85,7 @@ internal sealed class TrayPanel : Window
                 {
                     header,
                     new StackPanel { Spacing = 4, Children = { _bar, _status, _last } },
+                    _update,
                     Section("Accounts"),
                     _accounts,
                     new Border { Height = 1, Background = Palette.Brush(Palette.Border), Margin = new Thickness(0, 2) },
@@ -87,6 +93,9 @@ internal sealed class TrayPanel : Window
                 },
             },
         };
+        _update.Background = Palette.Brush(Palette.Accent);
+        _update.Foreground = Palette.Brush(Palette.Background);
+        _update.Click += (_, _) => { Hide(); _actions.Update(); };
         Deactivated += (_, _) => Hide();
         KeyDown += (_, e) => { if (e.Key == Key.Escape) Hide(); };
     }
@@ -138,7 +147,10 @@ internal sealed class TrayPanel : Window
         }
 
         _menu.Children.Clear();
-        if (view.UpdateTo is { } version) Item($"Update to {version}", _actions.Update, enabled: !view.Busy, accent: true);
+        // A newer signed release: one clear button under the status, not a line in the menu.
+        _update.IsVisible = view.UpdateTo is not null;
+        _update.IsEnabled = !view.Busy;
+        _update.Content = $"Update to {view.UpdateTo}";
         Item(view.Accounts.Count == 0 ? "Link your account…" : "Link another account…", _actions.Link);
         if (view.Accounts.Count > 0 && view.HasFolder && !view.InstallAgreed) Item("Allow installing files…", _actions.AllowInstalling, accent: true);
         if (view.NeedsAccess) Item("Allow access to the game folder…", _actions.AllowAccess, accent: true);

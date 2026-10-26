@@ -5,6 +5,20 @@ press **Send to my PC** in your stardexs.com account. The code is published so
 you can check exactly what it does. See [LICENSE](LICENSE): you can read it and
 build it to check it, but not copy or redistribute it.
 
+## Its panel
+
+Click or right-click the tray icon to open a panel in the website's colours.
+It shows:
+
+- the sync bar: a tracer runs along it to the red crosshair while a sync works,
+  and lands a hit when it's done;
+- each linked account, with its own **Sync** and **Unlink**;
+- the app's actions.
+
+The panel is built with [Avalonia](https://avaloniaui.net), which is open
+source and draws native windows; it doesn't embed a browser. Only Avalonia's
+Windows backend is included.
+
 ## It only acts when you ask
 
 It doesn't check in on a timer, listen on a network port, or update itself.
@@ -130,5 +144,5 @@ dotnet publish StarDexs.Sync -c Release
 | Folder | What's in it |
 |---|---|
 | `StarDexs.Sync.Core` | Reading logs, finding the game, safe writes, the stardexs.com calls. No user interface. |
-| `StarDexs.Sync` | The tray icon, menu, and dialogs (plain Win32, no UI framework). |
+| `StarDexs.Sync` | The tray icon (plain Win32), the panel (Avalonia), and the dialogs. |
 | `StarDexs.Sync.Tests` | Tests. They use temporary folders and a fake site, never a real game install. |

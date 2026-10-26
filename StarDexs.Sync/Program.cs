@@ -1,4 +1,6 @@
 using System.Security.Principal;
+using Avalonia;
+using Avalonia.Controls;
 using StarDexs.Sync.Core;
 
 namespace StarDexs.Sync;
@@ -24,6 +26,15 @@ internal static class Program
             }
         }
 
+        // "--render-preview <png>": draws the panel (with sample text) into an image and exits. For checking a
+        // published build's look without opening anything on screen; it reads and writes nothing else.
+        if (args is ["--render-preview", var image])
+        {
+            AppBuilder.Configure(() => new CompanionApp(null)).UseWin32().UseSkia().SetupWithoutStarting();
+            PanelPreview.Save(image);
+            return 0;
+        }
+
         var syncNow = SyncLink.IsSyncRequest(args);
         var account = SyncLink.Account(args);
         using var single = new Mutex(initiallyOwned: true, @"Local\StarDexsSync", out var first);
@@ -34,6 +45,11 @@ internal static class Program
             else Dialogs.Tell("StarDexs Companion is already running. Look for its icon by the clock.");
             return 0;
         }
-        return new TrayApp(syncNow, account).Run();
+        // Avalonia runs the message loop (for the tray icon too) until Quit; only its Windows backend is used.
+        var tray = new TrayApp(syncNow, account);
+        return AppBuilder.Configure(() => new CompanionApp(tray))
+            .UseWin32()
+            .UseSkia()
+            .StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
     }
 }

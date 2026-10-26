@@ -5,6 +5,18 @@ public sealed record SyncReport(
     string Message, bool Installed = false, bool NeedsPermission = false, bool NotLinked = false, bool WaitingForGame = false,
     bool UnknownFile = false, int NewBlueprints = 0, int NewCompleted = 0, string? HelperLatest = null);
 
+/// <summary>Where a sync is up to, for the app's sync bar and the account page's.</summary>
+public enum SyncStage { Reading, Sending, Checking, Downloading, Installing, Finished }
+
+public static class SyncStages
+{
+    /// <summary>The name stardexs.com shows for a stage.</summary>
+    public static string Name(this SyncStage stage) => stage.ToString().ToLowerInvariant();
+
+    /// <summary>How full the sync bar is when a stage starts (0 to 1).</summary>
+    public static double Share(this SyncStage stage) => (int)stage / (double)SyncStage.Finished;
+}
+
 /// <summary>
 /// One sync for one linked account: read what's new in the logs and send it, then check whether that
 /// account's file is current and install it if the player agreed. Nothing here runs on its own; the app
@@ -15,11 +27,28 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     public const int MaxBlueprintsPerSend = 4000, MaxCompletedPerSend = 2000;
 
     /// <param name="account">The account the player pressed "Send to my PC" in; null: the last one used.</param>
-    public async Task<SyncReport> RunAsync(string? account, CancellationToken cancel)
+    /// <param name="progress">Told as each stage starts. Each stage (and the result) also goes to stardexs.com, so the
+    /// player's account page can show the sync as it happens; only the stage name and the result's message.</param>
+    public async Task<SyncReport> RunAsync(string? account, CancellationToken cancel, IProgress<SyncStage>? progress = null)
     {
         var state = store.Load();
         account ??= state.LastAccount;
-        if (store.Token(state, account) is not { } token)
+        var token = store.Token(state, account);
+        var report = await RunLinkedAsync(state, account, token, progress, cancel);
+        progress?.Report(SyncStage.Finished);
+        if (token is not null && !report.NotLinked) await TellSiteAsync(token, SyncStage.Finished, report, cancel);
+        return report;
+    }
+
+    private async Task<SyncReport> RunLinkedAsync(SyncState state, string? account, string? token, IProgress<SyncStage>? progress, CancellationToken cancel)
+    {
+        async Task Stage(SyncStage stage)
+        {
+            progress?.Report(stage);
+            await TellSiteAsync(token!, stage, null, cancel);
+        }
+
+        if (token is null)
             return Done(state, new SyncReport(state.Accounts.Count == 0 || account is null
                 ? "Not linked to an account yet."
                 : "This PC isn't linked to that stardexs.com account yet.", NotLinked: true));
@@ -27,7 +56,9 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         state.LastAccount = account;
         try
         {
-            var (blueprints, completed) = await SendLogsAsync(state, account!, token, cancel);
+            await Stage(SyncStage.Reading);
+            var (blueprints, completed) = await SendLogsAsync(state, account!, token, () => Stage(SyncStage.Sending), cancel);
+            await Stage(SyncStage.Checking);
             var status = await api.StatusAsync(token, cancel);
             SyncReport Report(string message, bool installed = false, bool permission = false, bool waiting = false, bool unknown = false) =>
                 new(message, installed, permission, false, waiting, unknown, blueprints, completed, status.HelperLatest);
@@ -38,7 +69,9 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
             if (current) return Done(state, Report($"Up to date ({status.Patch})."));
             if (!state.InstallAgreed) return Done(state, Report($"A file for {status.Patch} is ready; allow installing to put it in place."));
 
+            await Stage(SyncStage.Downloading);
             var file = await api.FileAsync(token, cancel);
+            await Stage(SyncStage.Installing);
             var result = writer.Install(state.GameFolder!, file.Data, file.Patch, state.InstalledSha, state.ReplaceUnknownOnce);
             switch (result.Outcome)
             {
@@ -131,7 +164,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     }
 
     /// <summary>The logs' new lines, sent; offsets move on only once stardexs.com has them.</summary>
-    private async Task<(int Blueprints, int Completed)> SendLogsAsync(SyncState state, string account, string token, CancellationToken cancel)
+    private async Task<(int Blueprints, int Completed)> SendLogsAsync(SyncState state, string account, string token, Func<Task> sending, CancellationToken cancel)
     {
         var linked = state.Accounts[account];
         var findings = new LogFindings();
@@ -143,6 +176,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
+        if (!findings.IsEmpty) await sending();
         if (findings.Blueprints.Count > 0)
             await api.SendBlueprintsAsync(token, findings.Blueprints.Values.Take(MaxBlueprintsPerSend), cancel);
         if (findings.Completed.Count > 0)
@@ -160,6 +194,33 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         var backups = Path.Combine(live, "logbackups");
         if (!Directory.Exists(backups)) yield break;
         foreach (var log in Directory.EnumerateFiles(backups, "*.log").Where(log => GameFolder.IsReadableLog(live, log))) yield return log;
+    }
+
+    /// <summary>Best effort: a stage the website doesn't hear about never stops the sync.</summary>
+    private async Task TellSiteAsync(string token, SyncStage stage, SyncReport? result, CancellationToken cancel)
+    {
+        try { await api.ProgressAsync(token, stage.Name(), result?.Message, result is not null && Succeeded(result), cancel); }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or NotLinkedException) { }
+    }
+
+    /// <summary>The sync did what it could: installed, already current, or nothing to install yet.</summary>
+    public static bool Succeeded(SyncReport report) =>
+        !report.NotLinked && !report.NeedsPermission && !report.WaitingForGame && !report.UnknownFile
+        && !report.Message.StartsWith("Couldn't", StringComparison.Ordinal) && !report.Message.StartsWith("Choose", StringComparison.Ordinal) && !report.Message.Contains("took too long", StringComparison.Ordinal);
+
+    /// <summary>Unlinks this PC from the account, on stardexs.com too (best effort), so its token stops working.</summary>
+    public async Task<string> UnlinkAsync(string account, CancellationToken cancel)
+    {
+        var state = store.Load();
+        var name = state.Accounts.TryGetValue(account, out var linked) ? linked.Name : "that account";
+        if (store.Token(state, account) is { } token)
+        {
+            try { await api.UnlinkAsync(token, cancel); }
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or NotLinkedException) { }
+        }
+        store.Unlink(state, account);
+        store.Save(state);
+        return $"Unlinked {name} from this PC.";
     }
 
     private SyncReport Done(SyncState state, SyncReport report)

@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- StarDexs Companion: a tray icon that keeps a player's StarDexs file current. Plain Win32 through LibraryImport, no UI framework. -->
+  <!-- StarDexs Companion: a tray icon and a themed panel that put a player's StarDexs file in the game when they ask.
+       The tray icon is plain Win32 (LibraryImport); the panel is Avalonia (open source, native rendering, no browser engine). -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -9,21 +10,31 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <AssemblyName>StarDexsCompanion</AssemblyName>
     <RootNamespace>StarDexs.Sync</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Product>StarDexs Companion</Product>
     <Company>AJ Solutions, LLC</Company>
-    <Description>Keeps your StarDexs file up to date after every patch.</Description>
+    <Description>Puts your StarDexs file in the game when you press Send to my PC.</Description>
     <ApplicationIcon>stardexs.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- One self-contained, trimmed file: no .NET install needed. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>true</PublishTrimmed>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <DebuggerSupport>false</DebuggerSupport>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.2" />
+    <!-- Only the Windows backend and the Skia renderer: Avalonia.Desktop would bring Linux pieces (and their advisories) this app never uses. -->
+    <PackageReference Include="Avalonia.Win32" Version="11.3.2" />
+    <PackageReference Include="Avalonia.Skia" Version="11.3.2" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.2" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\StarDexs.Sync.Core\StarDexs.Sync.Core.csproj" />

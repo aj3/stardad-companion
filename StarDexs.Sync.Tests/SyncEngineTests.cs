@@ -58,6 +58,44 @@ public class SyncEngineTests
     }
 
     [Fact]
+    public async Task Reports_each_stage_to_the_app_and_the_account_page()
+    {
+        using var setup = new Setup();
+        setup.Install.Log("Game.log", Blueprint + "\n");
+        var stages = new List<SyncStage>();
+        await setup.Engine.RunAsync(One, CancellationToken.None, new Recorder(stages));
+
+        Assert.Equal([SyncStage.Reading, SyncStage.Sending, SyncStage.Checking, SyncStage.Downloading, SyncStage.Installing, SyncStage.Finished], stages);
+        var told = setup.Site.Requests.Where(r => r.Path == "/api/sync/progress").Select(r => r.Body).ToList();
+        Assert.Equal(6, told.Count);
+        Assert.Contains("\"stage\":\"finished\"", told[^1]);
+        Assert.Contains("\"ok\":true", told[^1]);
+        Assert.Contains("Installed your file", told[^1]);
+    }
+
+    [Fact]
+    public async Task Unlinking_also_stops_the_token_on_the_website()
+    {
+        using var setup = new Setup();
+        Assert.Equal("Unlinked Pilot One from this PC.", await setup.Engine.UnlinkAsync(One, CancellationToken.None));
+        Assert.Contains(setup.Site.Requests, r => r.Path == "/api/sync/unlink" && r.Auth == "t-123");
+        Assert.Empty(setup.Store.Load().Accounts);
+
+        // Unreachable website: still unlinked here.
+        var state = setup.Store.Load();
+        setup.Store.Link(state, Two, "Pilot Two", "t-456");
+        setup.Store.Save(state);
+        await setup.EngineFor(new Unreachable()).UnlinkAsync(Two, CancellationToken.None);
+        Assert.Empty(setup.Store.Load().Accounts);
+    }
+
+    // Records stages as they're reported (Progress<T> would post them later, on another thread).
+    private sealed class Recorder(List<SyncStage> stages) : IProgress<SyncStage>
+    {
+        public void Report(SyncStage value) => stages.Add(value);
+    }
+
+    [Fact]
     public async Task Sends_only_names_and_dates_never_log_text()
     {
         using var setup = new Setup();

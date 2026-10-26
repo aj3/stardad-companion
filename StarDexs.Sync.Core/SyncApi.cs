@@ -94,6 +94,14 @@ public sealed class SyncApi(HttpClient http)
         await PostAsync("api/sync/completed", new JsonObject { ["completed"] = map }, token, cancel);
     }
 
+    /// <summary>Where a sync is up to (and, at the end, how it went), for the player's account page.</summary>
+    public async Task ProgressAsync(string token, string stage, string? message, bool ok, CancellationToken cancel) =>
+        await PostAsync("api/sync/progress", new JsonObject { ["stage"] = stage, ["message"] = message, ["ok"] = ok }, token, cancel);
+
+    /// <summary>Unlinks this PC on stardexs.com: its token stops working.</summary>
+    public async Task UnlinkAsync(string token, CancellationToken cancel) =>
+        await PostAsync("api/sync/unlink", new JsonObject(), token, cancel);
+
     /// <summary>Tells stardexs.com which file is now installed, so it keeps that one as a backup.</summary>
     public async Task InstalledAsync(string token, string patch, string sha256, CancellationToken cancel) =>
         await PostAsync("api/sync/installed", new JsonObject { ["patch"] = patch, ["sha256"] = sha256 }, token, cancel);

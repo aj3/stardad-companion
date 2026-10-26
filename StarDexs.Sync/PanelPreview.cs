@@ -1,0 +1,61 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media.Imaging;
+
+namespace StarDexs.Sync;
+
+/// <summary>Draws the panel, in a few sync states, into one image (see "--render-preview" in Program).</summary>
+internal static class PanelPreview
+{
+    private sealed class Nothing : IPanelActions
+    {
+        public void Sync(string account) { }
+        public void Unlink(string account) { }
+        public void Link() { }
+        public void AllowInstalling() { }
+        public void AllowAccess() { }
+        public void OpenSite() { }
+        public void ChangeFolder() { }
+        public void PutBackPrevious() { }
+        public void RemoveFile() { }
+        public void Quit() { }
+    }
+
+    public static void Save(string path)
+    {
+        (string Id, string Name)[] accounts = [("a", "AJ (main)"), ("b", "Alt account")];
+        PanelView[] views =
+        [
+            new("Downloading your file…", SyncBar.Look.Running, 0.6, null, accounts, true, true, false, true, true),
+            new("Installed your file for 4.10.2-live.12913470.", SyncBar.Look.Hit, 1, "Last sync 2:14 PM", accounts, true, true, false, true, false),
+            new("Couldn't reach stardexs.com. Try again in a moment.", SyncBar.Look.Missed, 0.4, "Last sync 2:16 PM", accounts, true, true, true, true, false),
+        ];
+        var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 16, Margin = new Thickness(16) };
+        var windows = new List<TrayPanel>();
+        foreach (var view in views)
+        {
+            // Opened off-screen so the controls get their theme, then drawn.
+            var panel = new TrayPanel(new Nothing()) { Position = new PixelPoint(-4000, -4000), ShowActivated = false };
+            panel.Show(view);
+            panel.Show();
+            windows.Add(panel);
+        }
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        var shots = new List<RenderTargetBitmap>();
+        foreach (var panel in windows)
+        {
+            var content = (Control)panel.Content!;
+            var shot = new RenderTargetBitmap(new PixelSize((int)content.Bounds.Width, (int)content.Bounds.Height));
+            shot.Render(content);
+            shots.Add(shot);
+            panel.Close();
+        }
+        foreach (var shot in shots) row.Children.Add(new Image { Source = shot, Width = shot.PixelSize.Width, Height = shot.PixelSize.Height });
+        var host = new Border { Background = Palette.Brush(Avalonia.Media.Color.Parse("#05070A")), Child = row };
+        host.Measure(Size.Infinity);
+        host.Arrange(new Rect(host.DesiredSize));
+        using var bitmap = new RenderTargetBitmap(new PixelSize((int)host.DesiredSize.Width, (int)host.DesiredSize.Height));
+        bitmap.Render(host);
+        bitmap.Save(path);
+    }
+}

@@ -1,8 +1,10 @@
-using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Threading;
 using StarDexs.Sync.Core;
 using static StarDexs.Sync.NativeMethods;
 
@@ -13,15 +15,13 @@ namespace StarDexs.Sync;
 /// player presses "Send to my PC" in their stardexs.com account (the stardexs-sync: link) or "Sync" in the
 /// menu, and only for an account the player linked on this PC. Watching for a game update reads
 /// build_manifest.id on this PC; nothing goes online for it.
-/// Windows messages arrive on the main thread; syncing runs on the thread pool, and anything that asks the
-/// player a question runs on its own short-lived thread so the icon never freezes. One lock keeps the state
-/// file to one writer at a time.
+/// The tray icon is plain Win32 on the UI thread (Avalonia runs the message loop); its panel is themed like
+/// the website. Syncing runs on the thread pool, and anything that asks the player a question runs on its own
+/// short-lived thread so the icon never freezes. One lock keeps the state file to one writer at a time.
 /// </summary>
-internal sealed class TrayApp
+internal sealed class TrayApp : IPanelActions
 {
-    private const uint WM_TRAY = WM_APP + 1, WM_POSTED = WM_APP + 2;
-    private const nuint IdStatus = 1, IdSite = 3, IdFolder = 4, IdPrevious = 7, IdRemove = 8, IdLink = 9, IdQuit = 11,
-        IdAllow = 12, IdAccess = 13, IdSyncAccount = 100, IdUnlinkAccount = 200;
+    private const uint WM_TRAY = WM_APP + 1;
     private const string ClassName = "StarDexsSyncTray", SyncNowMessage = "StarDexsSync.SyncNow";
     /// <summary>How often to look (locally, without going online) whether the game has closed.</summary>
     private static readonly TimeSpan GameCheck = TimeSpan.FromSeconds(15);
@@ -36,16 +36,18 @@ internal sealed class TrayApp
     private readonly SyncApi _api;
     private readonly SyncEngine _engine;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly ConcurrentQueue<Action> _posted = new();
     private readonly CancellationTokenSource _quit = new();
+    private TrayPanel? _panel;
     private FileSystemWatcher? _manifest;
     private uint _taskbarCreated, _syncNowMessage;
     private nint _window, _icon;
     private string _status = "Ready.";
-    private bool _needsAccess, _toldAccess, _toldUpdate;
+    private bool _needsAccess, _toldAccess, _toldUpdate, _busy;
     private int _asking, _waitingForGame;
-    /// <summary>The menu's account items, in order: ids <see cref="IdSyncAccount"/>+i and <see cref="IdUnlinkAccount"/>+i.</summary>
-    private string[] _menuAccounts = [];
+    // The sync bar: how it looks, how far it has got, and the last result.
+    private SyncBar.Look _look = SyncBar.Look.Idle;
+    private double _share;
+    private string? _lastSync;
 
     public TrayApp(bool syncNow, string? account)
     {
@@ -65,9 +67,11 @@ internal sealed class TrayApp
         return SyncApi.DefaultSite;
     }
 
-    public unsafe int Run()
+    /// <summary>Sets up the tray icon and the panel; Avalonia's message loop does the rest.</summary>
+    public unsafe void Start()
     {
         _app = this;
+        _panel = new TrayPanel(this);
         _taskbarCreated = RegisterWindowMessageW("TaskbarCreated");
         _syncNowMessage = RegisterWindowMessageW(SyncNowMessage);
         try { SyncLink.Register(); } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
@@ -78,11 +82,11 @@ internal sealed class TrayApp
             {
                 cbSize = (uint)sizeof(WNDCLASSEXW), lpfnWndProc = &WindowProc, hInstance = instance, lpszClassName = className,
             };
-            if (RegisterClassExW(&windowClass) == 0) return 1;
+            if (RegisterClassExW(&windowClass) == 0) return;
         }
         // A window that's never shown: it only receives the icon's clicks and the menu's commands.
         _window = CreateWindowExW(0, ClassName, "StarDexs Companion", 0, 0, 0, 0, 0, 0, 0, instance, 0);
-        if (_window == 0) return 1;
+        if (_window == 0) return;
         _icon = LoadImageW(instance, IDI_APPLICATION, IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
         if (_icon == 0) _icon = LoadImageW(0, IDI_APPLICATION, IMAGE_ICON, 0, 0, LR_SHARED | LR_DEFAULTSIZE);
         AddIcon();
@@ -92,17 +96,6 @@ internal sealed class TrayApp
         else if (_syncNow) _ = SyncAsync(_account, manual: true);
         else Balloon("StarDexs Companion is ready", "Press \"Send to my PC\" in your stardexs.com account when you want your file.");
         WatchForGameUpdates();
-
-        MSG message;
-        while (GetMessageW(&message, 0, 0, 0) > 0)
-        {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
-        }
-        _quit.Cancel();
-        _manifest?.Dispose();
-        RemoveIcon();
-        return 0;
     }
 
     /// <summary>Called by a second copy started from the website's link: hand the request (and its account) to this one.</summary>
@@ -155,28 +148,63 @@ internal sealed class TrayApp
         finally { Volatile.Write(ref _waitingForGame, 0); }
     }
 
-    private async Task SyncAsync(string? account, bool manual) =>
-        await RunAsync(() => _engine.RunAsync(account, _quit.Token), report => Show(report, account, manual));
+    private async Task SyncAsync(string? account, bool manual)
+    {
+        var stages = new StageReporter(stage => Post(() => Stage(stage)));
+        await RunAsync(() => _engine.RunAsync(account, _quit.Token, stages), report => Show(report, account, manual));
+    }
+
+    private void Stage(SyncStage stage)
+    {
+        if (stage == SyncStage.Finished) return;
+        _look = SyncBar.Look.Running;
+        _share = Math.Max(0.06, stage.Share());
+        _status = stage switch
+        {
+            SyncStage.Reading => "Reading your game logs…",
+            SyncStage.Sending => "Sending blueprints and contracts…",
+            SyncStage.Checking => "Checking your file…",
+            SyncStage.Downloading => "Downloading your file…",
+            _ => "Installing your file…",
+        };
+        Refresh();
+    }
 
     private async Task RunAsync(Func<Task<SyncReport>> work, Action<SyncReport> show)
     {
         if (!await _gate.WaitAsync(0)) return;
         try
         {
+            _busy = true;
+            _look = SyncBar.Look.Running;
+            _share = 0.04;
             SetStatus("Working…");
             var report = await Task.Run(work);
             Post(() => show(report));
         }
         catch (OperationCanceledException) { }
-        catch (Exception exception) { SetStatus($"Something went wrong: {exception.Message}"); }
-        finally { _gate.Release(); }
+        catch (Exception exception) { Post(() => Finish(false, $"Something went wrong: {exception.Message}")); }
+        finally
+        {
+            _gate.Release();
+            Post(() => { _busy = false; Refresh(); });
+        }
+    }
+
+    /// <summary>The bar lands on the target, or stops short, and the result stays until the next sync.</summary>
+    private void Finish(bool ok, string message)
+    {
+        _look = ok ? SyncBar.Look.Hit : SyncBar.Look.Missed;
+        _share = ok ? 1 : _share;
+        _status = message;
+        _lastSync = $"Last sync {DateTime.Now:t}";
+        Refresh();
     }
 
     private void Show(SyncReport report, string? account, bool manual)
     {
-        _status = report.Message;
         _needsAccess = report.NeedsPermission;
-        UpdateTip();
+        Finish(SyncEngine.Succeeded(report), report.Message);
         if (report.Installed) Balloon("Your StarDexs file is installed", report.Message);
         else if (report.WaitingForGame)
         {
@@ -360,13 +388,24 @@ internal sealed class TrayApp
         Post(() => _ = RunAsync(() => Task.FromResult(_engine.Remove()), report => Show(report, null, manual: true)));
     }
 
-    private void Unlink(string account)
+    private void UnlinkAccount(string account)
     {
         var name = _store.Load().Accounts.TryGetValue(account, out var linked) ? linked.Name : "this account";
-        if (!Dialogs.Ask($"Unlink {name} from this PC?\n\n\"Send to my PC\" in that account won't reach this PC until you link it again. Your installed file stays as it is. You can also remove this PC from the account page."))
+        if (!Dialogs.Ask($"Unlink {name} from this PC?\n\n\"Send to my PC\" in that account won't reach this PC until you link it again. Your installed file stays as it is."))
             return;
-        Update(state => _store.Unlink(state, account));
-        SetStatus($"Unlinked {name}.");
+        SetStatus($"Unlinking {name}…");
+        _gate.Wait();
+        string said;
+        try { said = _engine.UnlinkAsync(account, _quit.Token).GetAwaiter().GetResult(); }
+        finally { _gate.Release(); }
+        Post(() =>
+        {
+            _status = said;
+            _look = SyncBar.Look.Idle;
+            _share = 0;
+            Refresh();
+            Balloon("StarDexs Companion", said);
+        });
     }
 
     /// <summary>Changes the saved state while no sync is running. Not for the main thread.</summary>
@@ -382,75 +421,59 @@ internal sealed class TrayApp
         finally { _gate.Release(); }
     }
 
-    // ---- the menu --------------------------------------------------------------------------------------------
+    // ---- the panel -------------------------------------------------------------------------------------------
 
-    private unsafe void ShowMenu()
+    private PanelView View()
     {
         var state = _store.Load();
-        var hasFolder = GameFolder.IsLive(state.GameFolder);
-        var menu = CreatePopupMenu();
-        try
-        {
-            Item(menu, IdStatus, Shorten(_status, 60), grayed: true);
-            Separator(menu);
-            _menuAccounts = [.. state.Accounts.Keys.Order(StringComparer.Ordinal)];
-            for (var i = 0; i < _menuAccounts.Length && i < 50; i++)
-                Item(menu, IdSyncAccount + (nuint)i, $"Sync {state.Accounts[_menuAccounts[i]].Name}", grayed: !hasFolder);
-            Item(menu, IdLink, state.Accounts.Count == 0 ? "Link your account…" : "Link another account…");
-            if (state.Accounts.Count > 0 && hasFolder && !state.InstallAgreed) Item(menu, IdAllow, "Allow installing files…");
-            if (_needsAccess) Item(menu, IdAccess, "Allow access to the game folder…");
-            Item(menu, IdSite, "Open stardexs.com");
-            Separator(menu);
-            Item(menu, IdFolder, "Change game folder…");
-            Item(menu, IdPrevious, "Put previous file back…", grayed: !hasFolder || state.InstalledSha is null);
-            Item(menu, IdRemove, "Remove StarDexs from the game…", grayed: !hasFolder || state.InstalledSha is null);
-            for (var i = 0; i < _menuAccounts.Length && i < 50; i++)
-                Item(menu, IdUnlinkAccount + (nuint)i, $"Unlink {state.Accounts[_menuAccounts[i]].Name}…");
-            Separator(menu);
-            Item(menu, IdQuit, "Quit");
-
-            POINT point;
-            GetCursorPos(&point);
-            SetForegroundWindow(_window); // so the menu closes when the player clicks elsewhere
-            TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, point.X, point.Y, 0, _window, 0);
-            PostMessageW(_window, WM_NULL, 0, 0);
-        }
-        finally { DestroyMenu(menu); }
+        var accounts = state.Accounts.OrderBy(a => a.Value.Name, StringComparer.CurrentCultureIgnoreCase).Select(a => (a.Key, a.Value.Name)).ToList();
+        return new PanelView(_status, _look, _share, _lastSync, accounts, GameFolder.IsLive(state.GameFolder),
+            state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy);
     }
 
-    private void Command(nuint id)
+    private unsafe void ShowPanel()
     {
-        if (id >= IdSyncAccount && id < IdSyncAccount + (nuint)_menuAccounts.Length)
-        {
-            _ = SyncAsync(_menuAccounts[(int)(id - IdSyncAccount)], manual: true);
-            return;
-        }
-        if (id >= IdUnlinkAccount && id < IdUnlinkAccount + (nuint)_menuAccounts.Length)
-        {
-            var account = _menuAccounts[(int)(id - IdUnlinkAccount)];
-            Ask(() => Unlink(account));
-            return;
-        }
-        switch (id)
-        {
-            case IdLink:
-                if (_store.Load().Accounts.Count == 0) Ask(Setup);
-                else Ask(() => Link(null));
-                break;
-            case IdAllow: Ask(() => { AllowInstalling(); Post(() => _ = SyncAsync(null, manual: true)); }); break;
-            case IdAccess: Ask(AllowAccess); break;
-            case IdSite: Open(SyncApi.DefaultSite); break;
-            case IdFolder: Ask(() => { if (ChooseFolder(null)) Post(WatchForGameUpdates); }); break;
-            case IdPrevious: Ask(PutBackPrevious); break;
-            case IdRemove: Ask(RemoveFile); break;
-            case IdQuit: DestroyWindow(_window); break;
-        }
+        POINT point;
+        GetCursorPos(&point);
+        _panel?.ShowNear(new PixelPoint(point.X, point.Y), View());
     }
 
-    private static void Item(nint menu, nuint id, string text, bool grayed = false) =>
-        AppendMenuW(menu, MF_STRING | (grayed ? MF_GRAYED : 0), id, text);
+    /// <summary>The tooltip and, if it's open, the panel, after anything changes.</summary>
+    private void Refresh()
+    {
+        UpdateTip();
+        if (_panel is { IsVisible: true }) _panel.Show(View());
+    }
 
-    private static void Separator(nint menu) => AppendMenuW(menu, MF_SEPARATOR, 0, null);
+    // What the panel's buttons do.
+    void IPanelActions.Sync(string account) => _ = SyncAsync(account, manual: true);
+    void IPanelActions.Unlink(string account) => Ask(() => UnlinkAccount(account));
+    void IPanelActions.Link()
+    {
+        if (_store.Load().Accounts.Count == 0) Ask(Setup);
+        else Ask(() => Link(null));
+    }
+    void IPanelActions.AllowInstalling() => Ask(() => { AllowInstalling(); Post(() => _ = SyncAsync(null, manual: true)); });
+    void IPanelActions.AllowAccess() => Ask(AllowAccess);
+    void IPanelActions.OpenSite() => Open(SyncApi.DefaultSite);
+    void IPanelActions.ChangeFolder() => Ask(() => { if (ChooseFolder(null)) Post(WatchForGameUpdates); });
+    void IPanelActions.PutBackPrevious() => Ask(PutBackPrevious);
+    void IPanelActions.RemoveFile() => Ask(RemoveFile);
+    void IPanelActions.Quit()
+    {
+        _quit.Cancel();
+        _manifest?.Dispose();
+        RemoveIcon();
+        DestroyWindow(_window);
+        _window = 0;
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop) desktop.Shutdown();
+    }
+
+    /// <summary>Reports stages as they happen (Progress&lt;T&gt; would need a synchronization context; this posts itself).</summary>
+    private sealed class StageReporter(Action<SyncStage> report) : IProgress<SyncStage>
+    {
+        public void Report(SyncStage value) => report(value);
+    }
 
     // ---- the icon --------------------------------------------------------------------------------------------
 
@@ -490,7 +513,7 @@ internal sealed class TrayApp
         Shell_NotifyIconW(NIM_MODIFY, &data);
     }
 
-    private string Tip() => Shorten("StarDexs Companion: " + _status, 127);
+    private string Tip() => Shorten((_busy ? "StarDexs Companion is syncing: " : "StarDexs Companion: ") + _status, 127);
 
     private static string Shorten(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
@@ -503,14 +526,10 @@ internal sealed class TrayApp
 
     // ---- plumbing --------------------------------------------------------------------------------------------
 
-    /// <summary>Runs <paramref name="action"/> on the main thread.</summary>
-    private void Post(Action action)
-    {
-        _posted.Enqueue(action);
-        PostMessageW(_window, WM_POSTED, 0, 0);
-    }
+    /// <summary>Runs <paramref name="action"/> on the main (UI) thread.</summary>
+    private static void Post(Action action) => Dispatcher.UIThread.Post(action);
 
-    private void SetStatus(string status) => Post(() => { _status = status; UpdateTip(); });
+    private void SetStatus(string status) => Post(() => { _status = status; Refresh(); });
 
     private static void Open(Uri page) => Open(page.AbsoluteUri);
 
@@ -532,17 +551,8 @@ internal sealed class TrayApp
                 case WM_TRAY:
                     // Version 4 icons put the event in the low word of lParam.
                     var trayEvent = (uint)(lParam & 0xFFFF);
-                    if (trayEvent is WM_CONTEXTMENU or WM_RBUTTONUP or NIN_SELECT or NIN_KEYSELECT) app.ShowMenu();
+                    if (trayEvent is WM_CONTEXTMENU or WM_RBUTTONUP or NIN_SELECT or NIN_KEYSELECT) app.ShowPanel();
                     else if (trayEvent == NIN_BALLOONUSERCLICK) Open(SyncApi.DefaultSite);
-                    return 0;
-                case WM_COMMAND:
-                    app.Command(wParam & 0xFFFF);
-                    return 0;
-                case WM_POSTED:
-                    while (app._posted.TryDequeue(out var action)) action();
-                    return 0;
-                case WM_DESTROY:
-                    PostQuitMessage(0);
                     return 0;
             }
             if (message == app._syncNowMessage && message != 0)

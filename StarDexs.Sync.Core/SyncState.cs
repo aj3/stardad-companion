@@ -139,7 +139,8 @@ public sealed class StateStore(string folder, ISecretProtector protector)
 
     public void Link(SyncState state, string account, string name, string token)
     {
-        var linked = state.Accounts.TryGetValue(account, out var known) ? known : new LinkedAccount();
+        var linked = state.Accounts.TryGetValue(account, out var known) ? known
+            : new LinkedAccount { Schedule = SyncSchedule.Default, ScheduleSince = DateTimeOffset.UtcNow };
         linked.ProtectedToken = protector.Protect(token);
         linked.Name = name;
         state.Accounts[account] = linked;

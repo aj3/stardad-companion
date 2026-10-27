@@ -155,7 +155,8 @@ public class SyncEngineTests
     public async Task Takes_the_schedule_the_player_chose_and_runs_it_only_when_due()
     {
         using var setup = new Setup();
-        Assert.Empty(setup.Engine.DueAccounts(DateTimeOffset.UtcNow.AddDays(30))); // nothing chosen: never on its own
+        Assert.Empty(setup.Engine.DueAccounts(DateTimeOffset.UtcNow.AddHours(2.9)));
+        Assert.Equal([One], setup.Engine.DueAccounts(DateTimeOffset.UtcNow.AddHours(3.1))); // new-link default
 
         setup.Site.Schedule = """{"every_hours":6,"at_minute":null,"on_game_update":true}""";
         var (schedule, problem) = await setup.Engine.RefreshScheduleAsync(One, CancellationToken.None);

@@ -4,10 +4,11 @@ namespace StarDexs.Sync.Core;
 
 /// <summary>
 /// When the player asked, in their stardad.space account, for this PC to sync on its own: every few hours, or
-/// once a day at a set time on this PC's clock, and/or when the game updates. Off unless they turned it on.
+/// once a day at a set time on this PC's clock, and/or when the game updates. New links default to every three hours.
 /// </summary>
 public sealed record SyncSchedule(int EveryHours, int? AtMinute, bool OnGameUpdate)
 {
+    public static readonly SyncSchedule Default = new(3, null, false);
     /// <summary>The choices the website offers (0: no timed sync).</summary>
     public static readonly int[] Hours = [0, 3, 6, 12, 24];
 

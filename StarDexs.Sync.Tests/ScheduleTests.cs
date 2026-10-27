@@ -9,6 +9,30 @@ public class ScheduleTests
     private static DateTimeOffset At(int day, int hour, int minute = 0) => new(2026, 10, day, hour, minute, 0, TimeSpan.FromHours(-6));
 
     [Fact]
+    public void New_links_default_to_three_hours_but_saved_off_and_custom_schedules_survive()
+    {
+        using var install = new FakeInstall();
+        var store = new StateStore(install.Data, new FakeProtector());
+        var state = store.Load();
+        store.Link(state, "aaaaaaaaaaaaaaaa", "Pilot", "token");
+        var linked = state.Accounts["aaaaaaaaaaaaaaaa"];
+        Assert.Equal(SyncSchedule.Default, linked.Schedule);
+        Assert.NotNull(linked.ScheduleSince);
+        Assert.False(linked.Schedule!.IsDue(linked.ScheduleSince!.Value, linked.ScheduleSince.Value.AddHours(3).AddSeconds(-1)));
+        Assert.True(linked.Schedule.IsDue(linked.ScheduleSince.Value, linked.ScheduleSince.Value.AddHours(3)));
+        linked.Schedule = null;
+        store.Save(state);
+        state = store.Load();
+        store.Link(state, "aaaaaaaaaaaaaaaa", "Pilot", "new-token");
+        Assert.Null(state.Accounts["aaaaaaaaaaaaaaaa"].Schedule);
+        state.Accounts["aaaaaaaaaaaaaaaa"].Schedule = new SyncSchedule(6, null, false);
+        store.Save(state);
+        state = store.Load();
+        store.Link(state, "aaaaaaaaaaaaaaaa", "Pilot", "new-token");
+        Assert.Equal(6, state.Accounts["aaaaaaaaaaaaaaaa"].Schedule!.EveryHours);
+    }
+
+    [Fact]
     public void Every_few_hours_counts_from_the_last_sync()
     {
         var schedule = new SyncSchedule(6, null, false);

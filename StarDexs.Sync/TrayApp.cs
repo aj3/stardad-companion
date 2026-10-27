@@ -125,7 +125,7 @@ internal sealed class TrayApp : IPanelActions
         if (state.Accounts.Count == 0 || !GameFolder.IsLive(state.GameFolder)) Ask(Setup);
         else if (_syncNow) _ = SyncAsync(_account, manual: true);
         else if (_refreshSchedule) _ = RefreshScheduleAsync(_account);
-        else if (!_background) Balloon("StarDad Companion is ready", "Press \"Send to my PC\" in your StarDad account when you want your file.");
+        else if (!_background) Balloon("StarDad Companion is ready", "New links sync every 3 hours by default. Change the schedule in your account, or press Sync any time.");
         WatchForGameUpdates();
         ApplyAutoStart();
         _clock = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
@@ -349,7 +349,8 @@ internal sealed class TrayApp : IPanelActions
             : "Link this PC to your StarDad account.\n\n";
         if (!Dialogs.Confirm(intro +
                 "Your browser will open a page with a code on it. Sign in to the account there and approve the code.\n\n" +
-                $"This PC will be listed on the account as \"{device}\". You can link more than one account."))
+                $"This PC will be listed on the account as \"{device}\". You can link more than one account.\n\n" +
+                "New links sync every 3 hours by default and start StarDad Companion with Windows. Change or turn off automatic syncing on your account page."))
             return false;
         LinkStart start;
         try { start = _api.StartLinkAsync(device, _quit.Token).GetAwaiter().GetResult(); }
@@ -373,6 +374,7 @@ internal sealed class TrayApp : IPanelActions
             catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) { continue; }
             if (ready is null) continue;
             Update(state => _store.Link(state, ready.Account, ready.Name, ready.Token));
+            ApplyAutoStart();
             SetStatus($"Linked to {ready.Name}.");
             if (expected is not null && ready.Account != expected)
                 Dialogs.Tell($"Linked to {ready.Name}, which isn't the account you pressed \"Send to my PC\" in. Press it again in the account you want.");

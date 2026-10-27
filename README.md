@@ -1,7 +1,8 @@
 # StarDad Companion
 
 A small Windows tray app that puts your StarDad file into the game when you
-press **Send to my PC** in your stardad.space account. The code is published so
+link your stardad.space account. It syncs every 3 hours by default, and you can
+change or turn off the schedule in your account. The code is published so
 you can check exactly what it does. See [LICENSE](LICENSE): you can read it and
 build it to check it, but not copy or redistribute it.
 
@@ -38,17 +39,18 @@ The panel is built with [Avalonia](https://avaloniaui.net), which is open
 source and draws native windows; it doesn't embed a browser. Only Avalonia's
 Windows backend is included.
 
-## It only acts when you ask
+## Automatic and manual syncs
 
 It doesn't listen on a network port or update itself without you pressing
 **Update**.
 Nobody else can make it do anything, not even stardad.space's own staff: the
 website has no way to reach your PC. The app only talks to stardad.space when
-you press **Send to my PC** (or **Sync** in its menu), or at the times you chose
+you press **Send to my PC** (or **Sync** in its menu), or on the default three-hour schedule or at the times you choose
 for that PC under **Automatic sync** in your account, and only for an account
 you linked on this PC yourself.
 
-Automatic sync is off until you turn it on. You can pick every 3, 6 or 12
+Newly linked PCs sync every 3 hours by default. Existing saved schedules, including
+Off, are preserved. You can turn automatic syncing off, or pick every 3, 6 or 12
 hours, or once a day at a set time on your PC's clock, and you can add "when the
 game updates". While one is on, the app starts with Windows (for your Windows
 account only), so it's running when a sync is due. When the last one is turned

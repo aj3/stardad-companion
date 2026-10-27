@@ -44,7 +44,8 @@ internal sealed class TrayApp : IPanelActions
     private TrayPanel? _panel;
     private FileSystemWatcher? _manifest;
     /// <summary>Looks once a minute (on this PC) whether a sync the player scheduled is due.</summary>
-    private readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromMinutes(1) };
+    /// <summary>Made in Start: a DispatcherTimer made earlier (before Avalonia's Windows backend is set up) stops the app starting.</summary>
+    private DispatcherTimer? _clock;
     private uint _taskbarCreated, _syncNowMessage, _scheduleMessage;
     private nint _window, _icon;
     private string _status = "Ready.";
@@ -108,6 +109,7 @@ internal sealed class TrayApp : IPanelActions
         else if (!_background) Balloon("StarDexs Companion is ready", "Press \"Send to my PC\" in your stardexs.com account when you want your file.");
         WatchForGameUpdates();
         ApplyAutoStart();
+        _clock = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         _clock.Tick += (_, _) => _ = RunDueAsync();
         _clock.Start();
     }
@@ -589,7 +591,7 @@ internal sealed class TrayApp : IPanelActions
     void IPanelActions.Quit()
     {
         _quit.Cancel();
-        _clock.Stop();
+        _clock?.Stop();
         _manifest?.Dispose();
         RemoveIcon();
         DestroyWindow(_window);

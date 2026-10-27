@@ -42,6 +42,19 @@ internal static class Program
             return 0;
         }
 
+        // "--check-startup": the real start-up path (the tray app object, Avalonia's Windows backend, its message
+        // loop), closed again at once without the tray icon or any state. Run on every build before release.
+        if (args is ["--check-startup"])
+        {
+            _ = new TrayApp(false, null);
+            return AppBuilder.Configure(() => new CompanionApp(null))
+                .UseWin32()
+                .UseSkia()
+                .AfterSetup(_ => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    (Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.Shutdown(0)))
+                .StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+        }
+
         var syncNow = SyncLink.IsSyncRequest(args);
         var schedule = SyncLink.IsScheduleRequest(args);
         var account = SyncLink.Account(args);

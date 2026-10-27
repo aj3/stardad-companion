@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- StarDexs Companion: a tray icon and a themed panel that put a player's StarDexs file in the game when they ask.
+  <!-- StarDad Companion: a tray icon and a themed panel that put a player's StarDexs file in the game when they ask.
        The tray icon is plain Win32 (LibraryImport); the panel is Avalonia (open source, native rendering, no browser engine). -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -8,13 +8,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <AssemblyName>StarDexsCompanion</AssemblyName>
+    <AssemblyName>StarDadCompanion</AssemblyName>
     <RootNamespace>StarDexs.Sync</RootNamespace>
-    <Version>0.3.8</Version>
-    <Product>StarDexs Companion</Product>
+    <Version>0.4.0</Version>
+    <Product>StarDad Companion</Product>
     <Company>AJ Solutions, LLC</Company>
-    <Description>Puts your StarDexs file in the game when you press Send to my PC.</Description>
-    <ApplicationIcon>stardexs.ico</ApplicationIcon>
+    <Description>Puts your StarDad file in the game when you ask, or on your schedule.</Description>
+    <ApplicationIcon>stardad.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- One self-contained, trimmed file: no .NET install needed. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

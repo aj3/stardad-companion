@@ -9,7 +9,7 @@ public sealed record LinkStart(string Code, string Poll, Uri LinkPage);
 /// <summary>A link the player approved: this PC's token for their account, the account's public id and name.</summary>
 public sealed record LinkReady(string Token, string Account, string Name);
 /// <param name="Account">Which account the token belongs to (its public id).</param>
-/// <param name="HelperLatest">The newest StarDexs Companion version on stardexs.com, so the app can mention an update.</param>
+/// <param name="HelperLatest">The newest StarDad Companion version on the StarDad website, so the app can mention an update.</param>
 public sealed record SyncStatus(string? Patch, string Settings, bool HasSettings, string? Account = null, string? HelperLatest = null, SyncSchedule? Schedule = null);
 public sealed record SyncFile(byte[] Data, string Patch, string Settings);
 
@@ -17,7 +17,7 @@ public sealed record SyncFile(byte[] Data, string Patch, string Settings);
 public sealed class NotLinkedException : Exception;
 
 /// <summary>
-/// The only network traffic StarDexs Companion makes, all to stardexs.com, only when the player asks or at times
+/// The only network traffic StarDad Companion makes, all to stardexs.com, only when the player asks or at times
 /// they chose:
 /// linking, asking whether the player's file is current (and which automatic syncs they chose), downloading it
 /// (or the previous one), and sending blueprint names, completed contract titles and the installed file's hash.
@@ -73,7 +73,7 @@ public sealed class SyncApi(HttpClient http)
         catch (Exception exception) when (exception is InvalidOperationException or FormatException) { return null; }
     }
 
-    /// <summary>The file installed before the current one, kept on stardexs.com; null when there isn't one.</summary>
+    /// <summary>The file installed before the current one, kept on the StarDad website; null when there isn't one.</summary>
     public async Task<SyncFile?> PreviousFileAsync(string token, CancellationToken cancel)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/sync/file/previous");
@@ -120,7 +120,7 @@ public sealed class SyncApi(HttpClient http)
     public async Task ProgressAsync(string token, string stage, string? message, bool ok, CancellationToken cancel) =>
         await PostAsync("api/sync/progress", new JsonObject { ["stage"] = stage, ["message"] = message, ["ok"] = ok }, token, cancel);
 
-    /// <summary>Unlinks this PC on stardexs.com: its token stops working.</summary>
+    /// <summary>Unlinks this PC on the StarDad website: its token stops working.</summary>
     public async Task UnlinkAsync(string token, CancellationToken cancel) =>
         await PostAsync("api/sync/unlink", new JsonObject(), token, cancel);
 
@@ -153,5 +153,5 @@ public sealed class SyncApi(HttpClient http)
     }
 
     private static string Text(JsonNode? body, string name) =>
-        body?[name]?.GetValue<string>() ?? throw new HttpRequestException($"stardexs.com sent no {name}.");
+        body?[name]?.GetValue<string>() ?? throw new HttpRequestException($"The StarDad website sent no {name}.");
 }

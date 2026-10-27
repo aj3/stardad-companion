@@ -5,7 +5,7 @@ namespace StarDexs.Sync;
 /// <summary>Plain Windows message boxes, always on top so they're never lost behind the game.</summary>
 internal static class Dialogs
 {
-    private const string Title = "StarDexs Companion";
+    private const string Title = "StarDad Companion";
 
     public static void Tell(string text, bool warning = false) =>
         MessageBoxW(0, text, Title, MB_OK | MB_SETFOREGROUND | MB_TOPMOST | (warning ? MB_ICONWARNING : MB_ICONINFORMATION));

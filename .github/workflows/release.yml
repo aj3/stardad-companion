@@ -1,7 +1,7 @@
 # Builds each release from this repository's public source, on GitHub's machines, when a version tag (v1.2.3)
 # is pushed. GitHub then signs a record (an attestation) saying exactly which commit and workflow built each
 # file, so anyone can check a download came from this code:
-#   gh attestation verify StarDexsCompanion.exe --repo aj3/stardexs-companion
+#   gh attestation verify StarDadCompanion.exe --repo aj3/stardexs-companion
 # stardexs.com publishes these same files; the update signature is added separately, with a key kept offline.
 name: Release
 
@@ -40,7 +40,7 @@ jobs:
       - name: Start-up check
         shell: pwsh
         run: |
-          $run = Start-Process out/StarDexsCompanion.exe -ArgumentList "--check-startup" -PassThru
+          $run = Start-Process out/StarDadCompanion.exe -ArgumentList "--check-startup" -PassThru
           if (-not $run.WaitForExit(60000)) { $run.Kill(); throw "The start-up check didn't finish within a minute." }
           if ($run.ExitCode -ne 0) { throw "The start-up check failed (exit $($run.ExitCode))." }
 
@@ -51,14 +51,14 @@ jobs:
           wix extension add -g WixToolset.UI.wixext/5.0.2
           # From the installer folder: Package.wxs names its licence, pictures and icon relative to it.
           Push-Location installer
-          wix build Package.wxs -ext WixToolset.UI.wixext -d Version=$env:VERSION -d Exe="$PWD/../out/StarDexsCompanion.exe" -o "../out/StarDexsCompanion-Setup-$env:VERSION.msi"
+          wix build Package.wxs -ext WixToolset.UI.wixext -d Version=$env:VERSION -d Exe="$PWD/../out/StarDadCompanion.exe" -o "../out/StarDadCompanion-Setup-$env:VERSION.msi"
           if ($LASTEXITCODE -ne 0) { throw "The installer didn't build." }
           Pop-Location
 
       - name: Fingerprints
         shell: pwsh
         run: |
-          Get-FileHash out/StarDexsCompanion.exe, "out/StarDexsCompanion-Setup-$env:VERSION.msi" -Algorithm SHA256 |
+          Get-FileHash out/StarDadCompanion.exe, "out/StarDadCompanion-Setup-$env:VERSION.msi" -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path $_.Path -Leaf)" } |
             Set-Content out/SHA256SUMS.txt -Encoding utf8
 
@@ -66,8 +66,8 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            out/StarDexsCompanion.exe
-            out/StarDexsCompanion-Setup-*.msi
+            out/StarDadCompanion.exe
+            out/StarDadCompanion-Setup-*.msi
 
       - name: GitHub release
         shell: pwsh
@@ -75,4 +75,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notes = "Built by GitHub Actions from the source at this tag. Check any file with:`n`n    gh attestation verify <file> --repo ${{ github.repository }}`n`nFingerprints are in SHA256SUMS.txt."
-          gh release create $env:GITHUB_REF_NAME out/StarDexsCompanion.exe "out/StarDexsCompanion-Setup-$env:VERSION.msi" out/SHA256SUMS.txt --title "StarDexs Companion $env:VERSION" --notes $notes
+          gh release create $env:GITHUB_REF_NAME out/StarDadCompanion.exe "out/StarDadCompanion-Setup-$env:VERSION.msi" out/SHA256SUMS.txt --title "StarDad Companion $env:VERSION" --notes $notes

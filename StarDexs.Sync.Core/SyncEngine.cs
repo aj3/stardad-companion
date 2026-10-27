@@ -20,7 +20,7 @@ public static class SyncStages
 /// <summary>
 /// One sync for one linked account: read what's new in the logs and send it, then check whether that
 /// account's file is current and install it if the player agreed. Nothing here runs on its own; the app
-/// calls it when the player asks (from stardexs.com or the tray menu) or at the times they chose on stardexs.com.
+/// calls it when the player asks (from stardexs.com or the tray menu) or at the times they chose on the StarDad website.
 /// </summary>
 public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writer)
 {
@@ -51,7 +51,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         if (token is null)
             return Done(state, new SyncReport(state.Accounts.Count == 0 || account is null
                 ? "Not linked to an account yet."
-                : "This PC isn't linked to that stardexs.com account yet.", NotLinked: true));
+                : "This PC isn't linked to that StarDad account yet.", NotLinked: true));
         if (!GameFolder.IsLive(state.GameFolder)) return Done(state, new SyncReport("Choose your game folder to start."));
         state.LastAccount = account;
         try
@@ -64,7 +64,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
             SyncReport Report(string message, bool installed = false, bool permission = false, bool waiting = false, bool unknown = false) =>
                 new(message, installed, permission, false, waiting, unknown, blueprints, completed, status.HelperLatest);
 
-            if (status.Patch is null) return Done(state, Report("stardexs.com has no file for this patch yet."));
+            if (status.Patch is null) return Done(state, Report("StarDad has no file for this patch yet."));
             var current = status.Patch == state.InstalledPatch && status.Settings == state.InstalledSettings && account == state.InstalledAccount
                           && File.Exists(GameFolder.GlobalIniPath(state.GameFolder!));
             if (current) return Done(state, Report($"Up to date ({status.Patch})."));
@@ -93,11 +93,11 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         }
         catch (HttpRequestException)
         {
-            return Done(state, new SyncReport("Couldn't reach stardexs.com. Try again in a moment."));
+            return Done(state, new SyncReport("Couldn't reach the StarDad website. Try again in a moment."));
         }
         catch (TaskCanceledException) when (!cancel.IsCancellationRequested)
         {
-            return Done(state, new SyncReport("stardexs.com took too long to answer. Try again in a moment."));
+            return Done(state, new SyncReport("The StarDad website took too long to answer. Try again in a moment."));
         }
     }
 
@@ -124,7 +124,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         catch (NotLinkedException) { return new SyncReport("This PC was unlinked from that account.", NotLinked: true); }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            return new SyncReport("Couldn't reach stardexs.com. Try again in a moment.");
+            return new SyncReport("Couldn't reach the StarDad website. Try again in a moment.");
         }
     }
 
@@ -202,7 +202,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         return (blueprints, completed);
     }
 
-    /// <summary>Keeps the schedule the player chose on stardexs.com; a new one counts from now.</summary>
+    /// <summary>Keeps the schedule the player chose on the StarDad website; a new one counts from now.</summary>
     private static void TakeSchedule(LinkedAccount linked, SyncSchedule? schedule)
     {
         if (linked.Schedule == schedule) return;
@@ -218,7 +218,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     {
         var state = store.Load();
         account ??= state.LastAccount;
-        if (store.Token(state, account) is not { } token) return (null, "This PC isn't linked to that stardexs.com account yet.");
+        if (store.Token(state, account) is not { } token) return (null, "This PC isn't linked to that StarDad account yet.");
         try
         {
             var status = await api.StatusAsync(token, cancel);
@@ -229,7 +229,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         catch (NotLinkedException) { return (null, "This PC was unlinked from that account."); }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            return (null, "Couldn't reach stardexs.com. Try again in a moment.");
+            return (null, "Couldn't reach the StarDad website. Try again in a moment.");
         }
     }
 
@@ -272,7 +272,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         !report.NotLinked && !report.NeedsPermission && !report.WaitingForGame && !report.UnknownFile
         && !report.Message.StartsWith("Couldn't", StringComparison.Ordinal) && !report.Message.StartsWith("Choose", StringComparison.Ordinal) && !report.Message.Contains("took too long", StringComparison.Ordinal);
 
-    /// <summary>Unlinks this PC from the account, on stardexs.com too (best effort), so its token stops working.</summary>
+    /// <summary>Unlinks this PC from the account, on the StarDad website too (best effort), so its token stops working.</summary>
     public async Task<string> UnlinkAsync(string account, CancellationToken cancel)
     {
         var state = store.Load();

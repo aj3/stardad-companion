@@ -66,7 +66,7 @@ public class SyncEngineTests
         await setup.Engine.RunAsync(One, CancellationToken.None);
         Assert.Single(setup.Site.Owned);
 
-        setup.Site.Owned.Clear(); // the player pressed Forget on stardexs.com
+        setup.Site.Owned.Clear(); // the player pressed Forget on the StarDad website
         setup.Site.Completed.Clear();
         var report = await setup.Engine.RunAsync(One, CancellationToken.None);
 
@@ -275,7 +275,7 @@ public class SyncEngineTests
         // The next sync installs the current file again.
         Assert.True((await setup.Engine.RunAsync(One, CancellationToken.None)).Installed);
 
-        Assert.Equal("Took your StarDexs file out of the game. Restart the game to see its own text again.", setup.Engine.Remove().Message);
+        Assert.Equal("Took your StarDad file out of the game. Restart the game to see its own text again.", setup.Engine.Remove().Message);
         Assert.False(File.Exists(GameFolder.GlobalIniPath(setup.Install.Live)));
     }
 

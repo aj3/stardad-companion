@@ -12,17 +12,19 @@ namespace StarDexs.Sync;
 /// </summary>
 internal static partial class SyncLink
 {
-    public const string Scheme = "stardexs-sync";
-    private const string Key = @"Software\Classes\" + Scheme;
+    public const string Scheme = "stardad-sync";
+    /// <summary>The link's old name, still answered: the website and older links use it until they move.</summary>
+    public const string OldScheme = "stardexs-sync";
+    private static readonly string[] Schemes = [Scheme, OldScheme];
 
-    [GeneratedRegex(@"^stardexs-sync://(?:sync|schedule)/(?<account>[0-9a-f]{16})/?$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?:stardad|stardexs)-sync://(?:sync|schedule)/(?<account>[0-9a-f]{16})/?$", RegexOptions.CultureInvariant)]
     private static partial Regex WithAccount();
 
     public static bool IsScheduleRequest(string[] args) =>
-        args.Any(arg => arg.StartsWith(Scheme + "://schedule/", StringComparison.OrdinalIgnoreCase));
+        args.Any(arg => Schemes.Any(scheme => arg.StartsWith(scheme + "://schedule/", StringComparison.OrdinalIgnoreCase)));
 
     public static bool IsSyncRequest(string[] args) =>
-        !IsScheduleRequest(args) && args.Any(arg => arg == "--sync" || arg.StartsWith(Scheme + ":", StringComparison.OrdinalIgnoreCase));
+        !IsScheduleRequest(args) && args.Any(arg => arg == "--sync" || Schemes.Any(scheme => arg.StartsWith(scheme + ":", StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>The account id in the link, or null (then the last account used).</summary>
     public static string? Account(string[] args) =>
@@ -35,8 +37,13 @@ internal static partial class SyncLink
     /// <summary>Points the link at this copy of the app (run at every start, so a moved app keeps working).</summary>
     public static void Register()
     {
-        using var root = Registry.CurrentUser.CreateSubKey(Key);
-        root.SetValue("", "URL:StarDexs Companion");
+        foreach (var scheme in Schemes) Register(scheme);
+    }
+
+    private static void Register(string scheme)
+    {
+        using var root = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + scheme);
+        root.SetValue("", "URL:StarDad Companion");
         root.SetValue("URL Protocol", "");
         using var icon = root.CreateSubKey("DefaultIcon");
         icon.SetValue("", $"\"{Environment.ProcessPath}\",0");
@@ -44,5 +51,8 @@ internal static partial class SyncLink
         command.SetValue("", $"\"{Environment.ProcessPath}\" \"%1\"");
     }
 
-    public static void Unregister() => Registry.CurrentUser.DeleteSubKeyTree(Key, throwOnMissingSubKey: false);
+    public static void Unregister()
+    {
+        foreach (var scheme in Schemes) Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\" + scheme, throwOnMissingSubKey: false);
+    }
 }

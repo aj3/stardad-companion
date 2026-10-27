@@ -9,7 +9,7 @@ namespace StarDexs.Sync.Tests;
 
 public class UpdaterTests
 {
-    private static readonly byte[] NewExe = Encoding.UTF8.GetBytes("pretend this is StarDexs Companion 0.3.0");
+    private static readonly byte[] NewExe = Encoding.UTF8.GetBytes("pretend this is StarDad Companion 0.3.0");
     private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
     private string PublicKey => Convert.ToBase64String(_key.ExportSubjectPublicKeyInfo());

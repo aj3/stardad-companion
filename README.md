@@ -1,6 +1,6 @@
-# StarDexs Companion
+# StarDad Companion
 
-A small Windows tray app that puts your StarDexs file into the game when you
+A small Windows tray app that puts your StarDad file into the game when you
 press **Send to my PC** in your stardexs.com account. The code is published so
 you can check exactly what it does. See [LICENSE](LICENSE): you can read it and
 build it to check it, but not copy or redistribute it.
@@ -12,7 +12,7 @@ Download the installer from stardexs.com/companion. It:
 - shows the terms ([installer/License.rtf](installer/License.rtf)), which you
   accept before it installs;
 - installs for your Windows account only, with no administrator prompt, into
-  `%LOCALAPPDATA%\Programs\StarDexs Companion`;
+  `%LOCALAPPDATA%\Programs\StarDad Companion`;
 - adds Desktop and Start menu shortcuts and the `stardexs-sync:` link.
 
 Uninstall it from Windows Settings; that removes the shortcuts and the link
@@ -85,12 +85,12 @@ The PC keeps no backup copies. stardexs.com keeps the last two files you
 installed, and your account page lists them. From the tray menu you can:
 
 - **Put previous file back:** downloads the older of the two and installs it.
-- **Remove StarDexs from the game:** deletes the `global.ini` the app
+- **Remove StarDad from the game:** deletes the `global.ini` the app
   installed, and only that file. The language lines in `user.cfg` stay, since
   english is the game's default anyway.
 
 The app also keeps a short `journal.log` of what it wrote (the last 200
-lines), in `%LOCALAPPDATA%\StarDexs\Sync`.
+lines), in `%LOCALAPPDATA%\StarDad\Sync`.
 
 ## Game updates
 
@@ -126,7 +126,7 @@ that one file. The app never runs anything it downloads.
 
 The app runs as you. Windows may stop it writing to your game folder, for
 example under Program Files. If so, the app asks once whether to run
-`StarDexsCompanion.exe --grant`. Windows then shows its own administrator prompt.
+`StarDadCompanion.exe --grant`. Windows then shows its own administrator prompt.
 
 That step gives your Windows account permission to change only:
 
@@ -150,7 +150,7 @@ unlink the PC from either side: the website's account page, or the app's menu.
 When a sync, or **Check for updates** in the panel, finds a newer release, the
 panel offers **Update to x.y.z**. The update happens only when you press it.
 
-Each release is signed with StarDexs' release key (ECDSA P-256), on the
+Each release is signed with StarDad' release key (ECDSA P-256), on the
 maintainer's PC; the private key never goes anywhere else. The public half is
 built into the app (`Updater.ReleaseKey`):
 

@@ -31,7 +31,7 @@ internal static class PanelPreview
         [
             new("Downloading your file…", SyncBar.Look.Running, 0.6, "Last synced 7:26 PM", one, true, true, false, true, true),
             new("Installed your file for 4.10.2-live.12913470. Restart the game to see it.", SyncBar.Look.Hit, 1, "Last synced 7:26 PM", two, true, true, false, true, false, "0.4.0"),
-            new("Couldn't reach stardexs.com. Try again in a moment.", SyncBar.Look.Missed, 0.4, "Last synced 7:26 PM", one, true, true, true, true, false),
+            new("Couldn't reach the StarDad website. Try again in a moment.", SyncBar.Look.Missed, 0.4, "Last synced 7:26 PM", one, true, true, true, true, false),
             new("Press \"Send to my PC\" in your account, or Sync here.", SyncBar.Look.Idle, 0, null, one, true, true, false, false, false),
         ];
         var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 16, Margin = new Thickness(16) };

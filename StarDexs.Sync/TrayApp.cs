@@ -31,8 +31,7 @@ internal sealed class TrayApp : IPanelActions
     private readonly bool _syncNow, _refreshSchedule, _background;
     private readonly string? _account;
     private readonly string _version = typeof(TrayApp).Assembly.GetName().Version?.ToString(3) ?? "0";
-    private readonly string _dataFolder =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StarDexs", "Companion");
+    private readonly string _dataFolder = DataFolder();
     private readonly StateStore _store;
     private readonly SyncApi _api;
     private readonly SyncEngine _engine;
@@ -68,6 +67,26 @@ internal sealed class TrayApp : IPanelActions
         _updater = new Updater(SyncApi.CreateClient(Site(), _version));
     }
 
+    /// <summary>
+    /// %LOCALAPPDATA%\StarDad\Companion: linked accounts, the game folder, what the player agreed to. A copy kept
+    /// under the app's old name (StarDexs) moves here the first time; if it can't move, it's used where it is.
+    /// </summary>
+    private static string DataFolder()
+    {
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string folder = Path.Combine(local, "StarDad", "Companion"), old = Path.Combine(local, "StarDexs", "Companion");
+        if (Directory.Exists(folder) || !Directory.Exists(old)) return folder;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(folder)!);
+            Directory.Move(old, folder);
+            if (Directory.Exists(Path.GetDirectoryName(old)!) && !Directory.EnumerateFileSystemEntries(Path.GetDirectoryName(old)!).Any())
+                Directory.Delete(Path.GetDirectoryName(old)!);
+            return folder;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return old; }
+    }
+
     // Release builds only ever talk to stardexs.com. Debug builds can point at a local copy of the site.
     private static Uri Site()
     {
@@ -96,7 +115,7 @@ internal sealed class TrayApp : IPanelActions
             if (RegisterClassExW(&windowClass) == 0) return;
         }
         // A window that's never shown: it only receives the icon's clicks and the menu's commands.
-        _window = CreateWindowExW(0, ClassName, "StarDexs Companion", 0, 0, 0, 0, 0, 0, 0, instance, 0);
+        _window = CreateWindowExW(0, ClassName, "StarDad Companion", 0, 0, 0, 0, 0, 0, 0, instance, 0);
         if (_window == 0) return;
         _icon = LoadImageW(instance, IDI_APPLICATION, IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
         if (_icon == 0) _icon = LoadImageW(0, IDI_APPLICATION, IMAGE_ICON, 0, 0, LR_SHARED | LR_DEFAULTSIZE);
@@ -106,7 +125,7 @@ internal sealed class TrayApp : IPanelActions
         if (state.Accounts.Count == 0 || !GameFolder.IsLive(state.GameFolder)) Ask(Setup);
         else if (_syncNow) _ = SyncAsync(_account, manual: true);
         else if (_refreshSchedule) _ = RefreshScheduleAsync(_account);
-        else if (!_background) Balloon("StarDexs Companion is ready", "Press \"Send to my PC\" in your stardexs.com account when you want your file.");
+        else if (!_background) Balloon("StarDad Companion is ready", "Press \"Send to my PC\" in your StarDad account when you want your file.");
         WatchForGameUpdates();
         ApplyAutoStart();
         _clock = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
@@ -128,7 +147,7 @@ internal sealed class TrayApp : IPanelActions
         if (window != 0) PostMessageW(window, RegisterWindowMessageW(ScheduleMessage), SyncLink.ToNumber(account), 0);
     }
 
-    // ---- automatic syncs, at the times the player chose on stardexs.com --------------------------------------
+    // ---- automatic syncs, at the times the player chose on the StarDad website --------------------------------------
 
     /// <summary>Syncs each account whose scheduled time has come, one after another.</summary>
     private async Task RunDueAsync()
@@ -149,9 +168,9 @@ internal sealed class TrayApp : IPanelActions
             ApplyAutoStart();
             _status = problem ?? (schedule is null ? "Automatic sync is off." : $"Automatic sync: {schedule.Describe()}.");
             Refresh();
-            Balloon("StarDexs Companion", problem ?? (schedule is null
+            Balloon("StarDad Companion", problem ?? (schedule is null
                 ? "Automatic sync is off. Syncs happen when you ask."
-                : $"Automatic sync: {schedule.Describe()}. StarDexs Companion starts with Windows so it can."), warning: problem is not null);
+                : $"Automatic sync: {schedule.Describe()}. StarDad Companion starts with Windows so it can."), warning: problem is not null);
         });
     }
 
@@ -183,7 +202,7 @@ internal sealed class TrayApp : IPanelActions
         UpdateTip();
         if (accounts.Count == 0)
         {
-            Balloon("The game updated", "Your StarDexs file is for the last patch. Open your stardexs.com account and press \"Send to my PC\" when the new one is ready.");
+            Balloon("The game updated", "Your StarDad file is for the last patch. Open your StarDad account and press \"Send to my PC\" when the new one is ready.");
             return;
         }
         // The player asked for a sync when the game updates. If stardexs.com hasn't built files for the new
@@ -267,10 +286,10 @@ internal sealed class TrayApp : IPanelActions
         _needsAccess = report.NeedsPermission;
         ApplyAutoStart(); // the sync brought this PC's schedule along
         Finish(SyncEngine.Succeeded(report), report.Message);
-        if (report.Installed) Balloon("Your StarDexs file is installed", report.Message);
+        if (report.Installed) Balloon("Your StarDad file is installed", report.Message);
         else if (report.WaitingForGame)
         {
-            Balloon("StarDexs Companion", "Your file goes in as soon as you close the game.");
+            Balloon("StarDad Companion", "Your file goes in as soon as you close the game.");
             _ = FinishAfterGameClosesAsync(account);
         }
         else if (report.UnknownFile) Ask(() => ReplaceUnknown(account));
@@ -279,14 +298,14 @@ internal sealed class TrayApp : IPanelActions
         else if (report.NeedsPermission && !_toldAccess)
         {
             _toldAccess = true;
-            Balloon("StarDexs Companion needs your permission", "Right-click its icon and choose \"Allow access to the game folder\".", warning: true);
+            Balloon("StarDad Companion needs your permission", "Right-click its icon and choose \"Allow access to the game folder\".", warning: true);
         }
         else if (manual)
         {
             var sent = report.NewBlueprints + report.NewCompleted > 0
                 ? $" Added {report.NewBlueprints} blueprints and {report.NewCompleted} finished contracts to your account."
                 : "";
-            Balloon("StarDexs Companion", report.Message + sent);
+            Balloon("StarDad Companion", report.Message + sent);
         }
         if (!_toldUpdate && report.HelperLatest is { } latest && Version.TryParse(latest, out var newest)
             && Version.TryParse(_version, out var mine) && newest > mine)
@@ -306,7 +325,7 @@ internal sealed class TrayApp : IPanelActions
             try { questions(); }
             catch (Exception exception) { SetStatus($"Something went wrong: {exception.Message}"); }
             finally { Volatile.Write(ref _asking, 0); }
-        }) { IsBackground = true, Name = "StarDexs questions" };
+        }) { IsBackground = true, Name = "StarDad questions" };
         thread.SetApartmentState(ApartmentState.STA); // the folder picker needs it
         thread.Start();
     }
@@ -325,8 +344,8 @@ internal sealed class TrayApp : IPanelActions
     {
         var device = Environment.MachineName;
         var intro = expected is not null && _store.Load().Accounts.Count > 0
-            ? "You pressed \"Send to my PC\" in a stardexs.com account this PC isn't linked to yet. Link it now?\n\n"
-            : "Link this PC to your stardexs.com account.\n\n";
+            ? "You pressed \"Send to my PC\" in a StarDad account this PC isn't linked to yet. Link it now?\n\n"
+            : "Link this PC to your StarDad account.\n\n";
         if (!Dialogs.Confirm(intro +
                 "Your browser will open a page with a code on it. Sign in to the account there and approve the code.\n\n" +
                 $"This PC will be listed on the account as \"{device}\". You can link more than one account."))
@@ -335,11 +354,11 @@ internal sealed class TrayApp : IPanelActions
         try { start = _api.StartLinkAsync(device, _quit.Token).GetAwaiter().GetResult(); }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            Dialogs.Tell("Couldn't reach stardexs.com. Check your connection, then choose \"Link an account\" from the tray menu.", warning: true);
+            Dialogs.Tell("Couldn't reach the StarDad website. Check your connection, then choose \"Link an account\" from the tray menu.", warning: true);
             return false;
         }
         Open(start.LinkPage);
-        SetStatus($"Waiting for you to approve code {start.Code} on stardexs.com…");
+        SetStatus($"Waiting for you to approve code {start.Code} on the StarDad website…");
         while (!_quit.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(3)))
         {
             LinkReady? ready;
@@ -371,7 +390,7 @@ internal sealed class TrayApp : IPanelActions
         string? folder = null;
         if (found is not null && !string.Equals(found, current, StringComparison.OrdinalIgnoreCase))
             folder = Dialogs.Ask($"Found your game here:\n\n{found}\n\nUse this folder?") ? found : null;
-        else if (found is not null && !Dialogs.Ask($"StarDexs Companion is using your game at:\n\n{found}\n\nPick a different folder?"))
+        else if (found is not null && !Dialogs.Ask($"StarDad Companion is using your game at:\n\n{found}\n\nPick a different folder?"))
             return false;
         while (folder is null)
         {
@@ -395,11 +414,11 @@ internal sealed class TrayApp : IPanelActions
     private void AllowInstalling()
     {
         var agreed = Dialogs.Ask(
-            "Can StarDexs Companion put your StarDexs file into the game folder?\n\n" +
+            "Can StarDad Companion put your StarDad file into the game folder?\n\n" +
             "It changes only:\n" +
             "  •  data\\Localization\\english\\global.ini (your file)\n" +
             "  •  the language lines in user.cfg\n\n" +
-            "It waits while the game is running. stardexs.com keeps your last two files, so you can put the " +
+            "It waits while the game is running. your StarDad account keeps your last two files, so you can put the " +
             "previous one back, or take the file out, from the tray menu at any time.\n\n" +
             "Choose No to only send your logs. You can allow this later from the tray menu.");
         Update(state => state.InstallAgreed = agreed);
@@ -408,9 +427,9 @@ internal sealed class TrayApp : IPanelActions
     private void ReplaceUnknown(string? account)
     {
         if (!Dialogs.Ask(
-                "There's a global.ini in your game folder that StarDexs Companion didn't put there " +
+                "There's a global.ini in your game folder that StarDad Companion didn't put there " +
                 "(maybe from another tool, or changed by hand).\n\n" +
-                "Replace it with your StarDexs file? The old one isn't kept."))
+                "Replace it with your StarDad file? The old one isn't kept."))
         {
             SetStatus("Left the other global.ini in place.");
             return;
@@ -424,8 +443,8 @@ internal sealed class TrayApp : IPanelActions
         var live = _store.Load().GameFolder;
         if (!GameFolder.IsLive(live)) return;
         if (!Dialogs.Confirm(
-                "Windows doesn't let StarDexs Companion write to your game folder yet.\n\n" +
-                "Next, Windows asks for administrator permission once. StarDexs Companion then lets your Windows account change only:\n" +
+                "Windows doesn't let StarDad Companion write to your game folder yet.\n\n" +
+                "Next, Windows asks for administrator permission once. StarDad Companion then lets your Windows account change only:\n" +
                 "  •  the data\\Localization\\english folder (where your file goes)\n" +
                 "  •  user.cfg (the language lines)\n\n" +
                 "Nothing else in the game folder changes."))
@@ -448,14 +467,14 @@ internal sealed class TrayApp : IPanelActions
 
     private void PutBackPrevious()
     {
-        if (!Dialogs.Confirm("Put back the file you had installed before this one? stardexs.com keeps it for you.\n\nThe next \"Send to my PC\" installs your current file again."))
+        if (!Dialogs.Confirm("Put back the file you had installed before this one? your StarDad account keeps it for you.\n\nThe next \"Send to my PC\" installs your current file again."))
             return;
         Post(() => _ = RunAsync(() => _engine.PutBackPreviousAsync(_quit.Token), report => Show(report, null, manual: true)));
     }
 
     private void RemoveFile()
     {
-        if (!Dialogs.Confirm("Take your StarDexs file out of the game? The game shows its own text again.\n\nOnly the global.ini StarDexs Companion installed is removed. \"Send to my PC\" puts it back."))
+        if (!Dialogs.Confirm("Take your StarDad file out of the game? The game shows its own text again.\n\nOnly the global.ini StarDad Companion installed is removed. \"Send to my PC\" puts it back."))
             return;
         Post(() => _ = RunAsync(() => Task.FromResult(_engine.Remove()), report => Show(report, null, manual: true)));
     }
@@ -477,7 +496,7 @@ internal sealed class TrayApp : IPanelActions
             _look = SyncBar.Look.Idle;
             _share = 0;
             Refresh();
-            Balloon("StarDexs Companion", said);
+            Balloon("StarDad Companion", said);
         });
     }
 
@@ -555,15 +574,15 @@ internal sealed class TrayApp : IPanelActions
         if (!quiet) SetStatus("Checking for updates…");
         Release? found = null;
         try { found = await _updater.NewestAsync(Version.Parse(_version), _quit.Token); }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) { if (!quiet) SetStatus("Couldn't reach stardexs.com. Try again in a moment."); return; }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) { if (!quiet) SetStatus("Couldn't reach the StarDad website. Try again in a moment."); return; }
         Post(() =>
         {
             _release = found;
             if (found is not null)
             {
-                Balloon("A new StarDexs Companion is ready", $"Version {found.Version.ToString(3)} is signed and ready. Click the tray icon and press Update.");
+                Balloon("A new StarDad Companion is ready", $"Version {found.Version.ToString(3)} is signed and ready. Click the tray icon and press Update.");
             }
-            else if (!quiet) _status = $"You have the newest StarDexs Companion ({_version}).";
+            else if (!quiet) _status = $"You have the newest StarDad Companion ({_version}).";
             Refresh();
         });
     }
@@ -577,13 +596,13 @@ internal sealed class TrayApp : IPanelActions
         var problem = await _updater.InstallAsync(release, exe, _quit.Token);
         if (problem is not null)
         {
-            Post(() => { _busy = false; _status = problem; Refresh(); Balloon("StarDexs Companion", problem, warning: true); });
+            Post(() => { _busy = false; _status = problem; Refresh(); Balloon("StarDad Companion", problem, warning: true); });
             return;
         }
         Post(() =>
         {
             try { Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = false })?.Dispose(); }
-            catch (Win32Exception) { _busy = false; _status = "Updated. Start StarDexs Companion again to use it."; Refresh(); return; }
+            catch (Win32Exception) { _busy = false; _status = "Updated. Start StarDad Companion again to use it."; Refresh(); return; }
             ((IPanelActions)this).Quit();
         });
     }
@@ -643,7 +662,7 @@ internal sealed class TrayApp : IPanelActions
         Shell_NotifyIconW(NIM_MODIFY, &data);
     }
 
-    private string Tip() => Shorten((_busy ? "StarDexs Companion is syncing: " : "StarDexs Companion: ") + _status, 127);
+    private string Tip() => Shorten((_busy ? "StarDad Companion is syncing: " : "StarDad Companion: ") + _status, 127);
 
     private static string Shorten(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
@@ -693,7 +712,7 @@ internal sealed class TrayApp : IPanelActions
             }
             if (message == app._scheduleMessage && message != 0)
             {
-                // From a second copy started by "Save schedule" on stardexs.com.
+                // From a second copy started by "Save schedule" on the StarDad website.
                 _ = app.RefreshScheduleAsync(SyncLink.FromNumber(wParam));
                 return 0;
             }

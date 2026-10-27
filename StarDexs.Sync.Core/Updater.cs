@@ -8,7 +8,7 @@ namespace StarDexs.Sync.Core;
 public sealed record Release(Version Version, string File, string Sha256);
 
 /// <summary>
-/// Updating StarDexs Companion, only when the player presses Update. stardexs.com/downloads/companion.json
+/// Updating StarDad Companion, only when the player presses Update. stardexs.com/downloads/companion.json
 /// names the newest release; it's accepted only if it's signed with the maintainer's release key (whose
 /// public half is built in below; the private half never leaves the maintainer's PC) and is newer than
 /// this copy. The download must then match the signed SHA-256 exactly. So whoever controls the website
@@ -66,7 +66,7 @@ public sealed class Updater(HttpClient http, string publicKey = Updater.ReleaseK
         {
             using (var response = await http.GetAsync("downloads/" + release.File, HttpCompletionOption.ResponseHeadersRead, cancel))
             {
-                if (!response.IsSuccessStatusCode) return "The update isn't on stardexs.com right now. Try again later.";
+                if (!response.IsSuccessStatusCode) return "The update isn't on the StarDad website right now. Try again later.";
                 if (response.Content.Headers.ContentLength > MaxDownloadBytes) return "The update was larger than expected, so it wasn't used.";
                 await using var source = await response.Content.ReadAsStreamAsync(cancel);
                 await using var target = new FileStream(incoming, FileMode.Create, FileAccess.Write, FileShare.None);
@@ -88,9 +88,9 @@ public sealed class Updater(HttpClient http, string publicKey = Updater.ReleaseK
             File.Move(incoming, exe);
             return null;
         }
-        catch (UnauthorizedAccessException) { return $"Windows won't let StarDexs Companion update itself in {folder}. Download it from stardexs.com instead."; }
+        catch (UnauthorizedAccessException) { return $"Windows won't let StarDad Companion update itself in {folder}. Download it from the StarDad website instead."; }
         catch (IOException exception) { return $"Couldn't update: {exception.Message}"; }
-        catch (HttpRequestException) { return "Couldn't reach stardexs.com. Try again in a moment."; }
+        catch (HttpRequestException) { return "Couldn't reach the StarDad website. Try again in a moment."; }
         finally
         {
             try { if (File.Exists(incoming)) File.Delete(incoming); } catch (IOException) { } catch (UnauthorizedAccessException) { }

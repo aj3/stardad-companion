@@ -57,7 +57,7 @@ internal sealed class TrayPanel : Window
     public TrayPanel(IPanelActions actions)
     {
         _actions = actions;
-        Title = "StarDexs Companion";
+        Title = "StarDad Companion";
         Width = PanelWidth;
         // Sized to its contents by Fit(), before it's shown: Windows' default size would leave a large empty area.
         SizeToContent = SizeToContent.Manual;
@@ -84,7 +84,7 @@ internal sealed class TrayPanel : Window
             Children =
             {
                 new Border { Width = 7, Height = 7, CornerRadius = new CornerRadius(4), Background = Palette.Brush(Palette.Accent), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) },
-                At(1, new TextBlock { Text = "StarDexs Companion", FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Palette.Brush(Palette.Soft), LetterSpacing = 0.3 }),
+                At(1, new TextBlock { Text = "StarDad Companion", FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Palette.Brush(Palette.Soft), LetterSpacing = 0.3 }),
             },
         };
         var status = new Grid
@@ -217,7 +217,7 @@ internal sealed class TrayPanel : Window
         _accounts.Children.Clear();
         if (view.Accounts.Count == 0)
         {
-            var link = new Button { Content = "Link your stardexs.com account", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(12, 9) };
+            var link = new Button { Content = "Link your StarDad account", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(12, 9) };
             Primary(link);
             link.Click += (_, _) => { Hide(); _actions.Link(); };
             _accounts.Children.Add(link);
@@ -225,13 +225,13 @@ internal sealed class TrayPanel : Window
         foreach (var (id, name, schedule) in view.Accounts) _accounts.Children.Add(AccountCard(id, name, schedule, view));
 
         _menu.Children.Clear();
-        _menu.Children.Add(Row(Globe, "Open stardexs.com", _actions.OpenSite));
+        _menu.Children.Add(Row(Globe, "Open the StarDad website", _actions.OpenSite));
         _menu.Children.Add(Row(Folder, "Change game folder…", _actions.ChangeFolder));
 
         _extra.Children.Clear();
         if (view.Accounts.Count > 0) _extra.Children.Add(Row(Link, "Link another account…", _actions.Link));
         _extra.Children.Add(Row(Undo, "Put previous file back…", _actions.PutBackPrevious, enabled: view.HasFolder && view.HasInstalled && !view.Busy));
-        _extra.Children.Add(Row(Remove, "Remove StarDexs from the game…", _actions.RemoveFile, enabled: view.HasFolder && view.HasInstalled && !view.Busy));
+        _extra.Children.Add(Row(Remove, "Remove StarDad from the game…", _actions.RemoveFile, enabled: view.HasFolder && view.HasInstalled && !view.Busy));
         _extra.Children.Add(Row(Refresh, "Check for updates", _actions.CheckForUpdates, enabled: !view.Busy));
         foreach (var (id, name, _) in view.Accounts)
             _extra.Children.Add(Row(Unlinked, $"Unlink {name}…", () => _actions.Unlink(id), enabled: !view.Busy));

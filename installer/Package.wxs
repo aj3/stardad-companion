@@ -1,75 +1,82 @@
 <!--
-  StarDexs Companion's installer (WiX v5). Per-user: no administrator prompt, installed under
-  %LOCALAPPDATA%\Programs\StarDexs Companion (a folder the app can update itself in), with Desktop and
+  StarDad Companion's installer (WiX v5). Per-user: no administrator prompt, installed under
+  %LOCALAPPDATA%\Programs\StarDad Companion (a folder the app can update itself in), with Desktop and
   Start menu shortcuts and an uninstall entry in Windows Settings. The licence page is License.rtf.
-  Build: wix build Package.wxs -ext WixToolset.UI.wixext -d Version=x.y.z -d Exe=path\StarDexsCompanion.exe -o StarDexsCompanion-Setup-x.y.z.msi
+  The UpgradeCode is the one StarDexs Companion used, so installing this replaces it cleanly.
+  Build: wix build Package.wxs -ext WixToolset.UI.wixext -d Version=x.y.z -d Exe=path\StarDadCompanion.exe -o StarDadCompanion-Setup-x.y.z.msi
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
-  <Package Name="StarDexs Companion" Manufacturer="AJ Solutions, LLC" Version="$(var.Version)"
+  <Package Name="StarDad Companion" Manufacturer="AJ Solutions, LLC" Version="$(var.Version)"
            UpgradeCode="6628f5b6-5bb3-44cb-a3ef-82e40d821fa6" Scope="perUser" Compressed="yes">
-    <SummaryInformation Description="StarDexs Companion installer" />
-    <MajorUpgrade DowngradeErrorMessage="A newer StarDexs Companion is already installed." />
+    <SummaryInformation Description="StarDad Companion installer" />
+    <MajorUpgrade DowngradeErrorMessage="A newer StarDad Companion is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
-    <Icon Id="StarDexsIcon" SourceFile="..\StarDexs.Sync\stardexs.ico" />
-    <Property Id="ARPPRODUCTICON" Value="StarDexsIcon" />
+    <Icon Id="StarDadIcon" SourceFile="..\StarDexs.Sync\stardad.ico" />
+    <Property Id="ARPPRODUCTICON" Value="StarDadIcon" />
     <Property Id="ARPURLINFOABOUT" Value="https://stardexs.com/companion" />
     <Property Id="ARPHELPLINK" Value="https://stardexs.com/support" />
 
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsFolder" Name="Programs">
-        <Directory Id="INSTALLFOLDER" Name="StarDexs Companion" />
+        <Directory Id="INSTALLFOLDER" Name="StarDad Companion" />
       </Directory>
     </StandardDirectory>
     <StandardDirectory Id="DesktopFolder" />
     <StandardDirectory Id="ProgramMenuFolder" />
 
     <!-- Per-user parts are tracked by a value under the player's own registry key. -->
-    <Component Id="App" Directory="INSTALLFOLDER" Guid="9d0f6a8e-3f1e-4f62-9a6b-0b8c7a21c401">
-      <File Id="AppExe" Source="$(var.Exe)" Name="StarDexsCompanion.exe" KeyPath="no" />
-      <RegistryValue Root="HKCU" Key="Software\StarDexs\Companion" Name="Installed" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+    <Component Id="App" Directory="INSTALLFOLDER" Guid="3c7a2f61-8e0d-4b59-a6c2-5d1e9f704b18">
+      <File Id="AppExe" Source="$(var.Exe)" Name="StarDadCompanion.exe" KeyPath="no" />
+      <RegistryValue Root="HKCU" Key="Software\StarDad\Companion" Name="Installed" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
       <!-- What an update leaves behind, and the folders, go when it's uninstalled. -->
-      <RemoveFile Id="UpdateLeftover" Name="StarDexsCompanion.exe.old" On="uninstall" />
-      <RemoveFile Id="UpdateDownload" Name="StarDexsCompanion.exe.new" On="uninstall" />
+      <RemoveFile Id="UpdateLeftover" Name="StarDadCompanion.exe.old" On="uninstall" />
+      <RemoveFile Id="UpdateDownload" Name="StarDadCompanion.exe.new" On="uninstall" />
       <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
       <RemoveFolder Id="RemoveProgramsFolder" Directory="ProgramsFolder" On="uninstall" />
-      <!-- The "Send to my PC" link: also set by the app when it starts; removed with it. -->
-      <RegistryKey Root="HKCU" Key="Software\Classes\stardexs-sync">
-        <RegistryValue Type="string" Value="URL:StarDexs Companion" />
+      <!-- The "Send to my PC" link, under its new name and the old one (the website uses the old one until it moves). -->
+      <RegistryKey Root="HKCU" Key="Software\Classes\stardad-sync">
+        <RegistryValue Type="string" Value="URL:StarDad Companion" />
         <RegistryValue Name="URL Protocol" Type="string" Value="" />
-        <RegistryValue Key="DefaultIcon" Type="string" Value="&quot;[INSTALLFOLDER]StarDexsCompanion.exe&quot;,0" />
-        <RegistryValue Key="shell\open\command" Type="string" Value="&quot;[INSTALLFOLDER]StarDexsCompanion.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Key="DefaultIcon" Type="string" Value="&quot;[INSTALLFOLDER]StarDadCompanion.exe&quot;,0" />
+        <RegistryValue Key="shell\open\command" Type="string" Value="&quot;[INSTALLFOLDER]StarDadCompanion.exe&quot; &quot;%1&quot;" />
+      </RegistryKey>
+      <RegistryKey Root="HKCU" Key="Software\Classes\stardexs-sync">
+        <RegistryValue Type="string" Value="URL:StarDad Companion" />
+        <RegistryValue Name="URL Protocol" Type="string" Value="" />
+        <RegistryValue Key="DefaultIcon" Type="string" Value="&quot;[INSTALLFOLDER]StarDadCompanion.exe&quot;,0" />
+        <RegistryValue Key="shell\open\command" Type="string" Value="&quot;[INSTALLFOLDER]StarDadCompanion.exe&quot; &quot;%1&quot;" />
       </RegistryKey>
     </Component>
 
-    <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="2b6f4f0b-5c8d-4c1e-8a0c-6f7d2c9e3b12">
-      <Shortcut Id="DesktopLink" Name="StarDexs Companion" Description="Put your StarDexs file in the game"
-                Target="[INSTALLFOLDER]StarDexsCompanion.exe" WorkingDirectory="INSTALLFOLDER" Icon="StarDexsIcon" />
-      <RegistryValue Root="HKCU" Key="Software\StarDexs\Companion" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+    <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="8f41d0b7-2a6e-4c93-b15f-7e2d6a9c0e44">
+      <Shortcut Id="DesktopLink" Name="StarDad Companion" Description="Put your StarDad file in the game"
+                Target="[INSTALLFOLDER]StarDadCompanion.exe" WorkingDirectory="INSTALLFOLDER" Icon="StarDadIcon" />
+      <RegistryValue Root="HKCU" Key="Software\StarDad\Companion" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
     </Component>
 
-    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Guid="7e3c1a5d-9b42-4d7e-b1f0-3a8c5d6e2f93">
-      <Shortcut Id="StartMenuLink" Name="StarDexs Companion" Description="Put your StarDexs file in the game"
-                Target="[INSTALLFOLDER]StarDexsCompanion.exe" WorkingDirectory="INSTALLFOLDER" Icon="StarDexsIcon" />
-      <RegistryValue Root="HKCU" Key="Software\StarDexs\Companion" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Guid="b2e95c3a-6d17-4f08-9a4e-1c8f3b7d5a26">
+      <Shortcut Id="StartMenuLink" Name="StarDad Companion" Description="Put your StarDad file in the game"
+                Target="[INSTALLFOLDER]StarDadCompanion.exe" WorkingDirectory="INSTALLFOLDER" Icon="StarDadIcon" />
+      <RegistryValue Root="HKCU" Key="Software\StarDad\Companion" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
     </Component>
 
-    <Feature Id="Main" Title="StarDexs Companion">
+    <Feature Id="Main" Title="StarDad Companion">
       <ComponentRef Id="App" />
       <ComponentRef Id="DesktopShortcut" />
       <ComponentRef Id="StartMenuShortcut" />
     </Feature>
 
-    <!-- The licence page, StarDexs pictures, and "Start StarDexs Companion" on the last page. -->
+    <!-- The licence page, StarDad pictures, and "Start StarDad Companion" on the last page. -->
     <ui:WixUI Id="WixUI_Minimal" />
     <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
     <WixVariable Id="WixUIBannerBmp" Value="banner.bmp" />
     <WixVariable Id="WixUIDialogBmp" Value="dialog.bmp" />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Start StarDexs Companion" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Start StarDad Companion" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-    <CustomAction Id="StartApp" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]StarDexsCompanion.exe&quot;" Return="asyncNoWait" Impersonate="yes" />
+    <CustomAction Id="StartApp" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]StarDadCompanion.exe&quot;" Return="asyncNoWait" Impersonate="yes" />
     <!-- Uninstalling (not upgrading): the app takes away its own start-with-Windows entry, if a schedule had added one. -->
-    <CustomAction Id="StopStarting" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]StarDexsCompanion.exe&quot; --stop-starting" Return="ignore" />
+    <CustomAction Id="StopStarting" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]StarDadCompanion.exe&quot; --stop-starting" Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="StopStarting" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>

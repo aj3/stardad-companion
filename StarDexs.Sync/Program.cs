@@ -71,7 +71,7 @@ internal static class Program
             if (syncNow) TrayApp.AskRunningCopyToSync(account);
             else if (schedule) TrayApp.AskRunningCopyForSchedule(account);
             else if (args.Contains(AutoStart.Background)) { }
-            else Dialogs.Tell("StarDexs Companion is already running. Look for its icon by the clock.");
+            else Dialogs.Tell("StarDad Companion is already running. Look for its icon by the clock.");
             return 0;
         }
         // Avalonia runs the message loop (for the tray icon too) until Quit; only its Windows backend is used.

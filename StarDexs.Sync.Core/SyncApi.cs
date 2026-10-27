@@ -17,7 +17,7 @@ public sealed record SyncFile(byte[] Data, string Patch, string Settings);
 public sealed class NotLinkedException : Exception;
 
 /// <summary>
-/// The only network traffic StarDad Companion makes, all to stardexs.com, only when the player asks or at times
+/// The only network traffic StarDad Companion makes, all to stardad.space, only when the player asks or at times
 /// they chose:
 /// linking, asking whether the player's file is current (and which automatic syncs they chose), downloading it
 /// (or the previous one), and sending blueprint names, completed contract titles and the installed file's hash.
@@ -25,7 +25,7 @@ public sealed class NotLinkedException : Exception;
 /// </summary>
 public sealed class SyncApi(HttpClient http)
 {
-    public static readonly Uri DefaultSite = new("https://stardexs.com/");
+    public static readonly Uri DefaultSite = new("https://stardad.space/");
 
     public static HttpClient CreateClient(Uri site, string version)
     {
@@ -124,7 +124,7 @@ public sealed class SyncApi(HttpClient http)
     public async Task UnlinkAsync(string token, CancellationToken cancel) =>
         await PostAsync("api/sync/unlink", new JsonObject(), token, cancel);
 
-    /// <summary>Tells stardexs.com which file is now installed, so it keeps that one as a backup.</summary>
+    /// <summary>Tells stardad.space which file is now installed, so it keeps that one as a backup.</summary>
     public async Task InstalledAsync(string token, string patch, string sha256, CancellationToken cancel) =>
         await PostAsync("api/sync/installed", new JsonObject { ["patch"] = patch, ["sha256"] = sha256 }, token, cancel);
 

@@ -10,7 +10,7 @@ public enum SyncStage { Reading, Sending, Checking, Downloading, Installing, Fin
 
 public static class SyncStages
 {
-    /// <summary>The name stardexs.com shows for a stage.</summary>
+    /// <summary>The name stardad.space shows for a stage.</summary>
     public static string Name(this SyncStage stage) => stage.ToString().ToLowerInvariant();
 
     /// <summary>How full the sync bar is when a stage starts (0 to 1).</summary>
@@ -20,14 +20,14 @@ public static class SyncStages
 /// <summary>
 /// One sync for one linked account: read what's new in the logs and send it, then check whether that
 /// account's file is current and install it if the player agreed. Nothing here runs on its own; the app
-/// calls it when the player asks (from stardexs.com or the tray menu) or at the times they chose on the StarDad website.
+/// calls it when the player asks (from stardad.space or the tray menu) or at the times they chose on the StarDad website.
 /// </summary>
 public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writer)
 {
     public const int MaxBlueprintsPerSend = 4000, MaxCompletedPerSend = 2000;
 
     /// <param name="account">The account the player pressed "Send to my PC" in; null: the last one used.</param>
-    /// <param name="progress">Told as each stage starts. Each stage (and the result) also goes to stardexs.com, so the
+    /// <param name="progress">Told as each stage starts. Each stage (and the result) also goes to stardad.space, so the
     /// player's account page can show the sync as it happens; only the stage name and the result's message.</param>
     public async Task<SyncReport> RunAsync(string? account, CancellationToken cancel, IProgress<SyncStage>? progress = null)
     {
@@ -101,7 +101,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         }
     }
 
-    /// <summary>Puts back the file installed before the current one, which stardexs.com keeps (the PC keeps no copies).</summary>
+    /// <summary>Puts back the file installed before the current one, which stardad.space keeps (the PC keeps no copies).</summary>
     public async Task<SyncReport> PutBackPreviousAsync(CancellationToken cancel)
     {
         var state = store.Load();
@@ -165,7 +165,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     }
 
     /// <summary>
-    /// Everything the logs hold, sent every time (stardexs.com keeps each once), so anything removed from the
+    /// Everything the logs hold, sent every time (stardad.space keeps each once), so anything removed from the
     /// account comes back. Only logs that are new or changed since the last sync are read again.
     /// Returns how many the account didn't have yet.
     /// </summary>
@@ -211,7 +211,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     }
 
     /// <summary>
-    /// Asks stardexs.com only for the schedule the player chose for this PC (after they saved it there); nothing
+    /// Asks stardad.space only for the schedule the player chose for this PC (after they saved it there); nothing
     /// is read or installed. Returns the schedule, or a message when it couldn't be asked.
     /// </summary>
     public async Task<(SyncSchedule? Schedule, string? Problem)> RefreshScheduleAsync(string? account, CancellationToken cancel)

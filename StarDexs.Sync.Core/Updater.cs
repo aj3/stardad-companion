@@ -4,11 +4,11 @@ using System.Text.Json.Nodes;
 
 namespace StarDexs.Sync.Core;
 
-/// <summary>A release stardexs.com offers, after its signature checked out.</summary>
+/// <summary>A release stardad.space offers, after its signature checked out.</summary>
 public sealed record Release(Version Version, string File, string Sha256);
 
 /// <summary>
-/// Updating StarDad Companion, only when the player presses Update. stardexs.com/downloads/companion.json
+/// Updating StarDad Companion, only when the player presses Update. stardad.space/downloads/companion.json
 /// names the newest release; it's accepted only if it's signed with the maintainer's release key (whose
 /// public half is built in below; the private half never leaves the maintainer's PC) and is newer than
 /// this copy. The download must then match the signed SHA-256 exactly. So whoever controls the website

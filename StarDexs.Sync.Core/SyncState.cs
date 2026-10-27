@@ -27,12 +27,12 @@ public sealed class DpapiProtector : ISecretProtector
     }
 }
 
-/// <summary>One stardexs.com account linked on this PC. A PC can hold several (players who switch accounts).</summary>
+/// <summary>One stardad.space account linked on this PC. A PC can hold several (players who switch accounts).</summary>
 public sealed class LinkedAccount
 {
     /// <summary>The device token, protected with <see cref="ISecretProtector"/>.</summary>
     public string ProtectedToken { get; set; } = "";
-    /// <summary>The account's name as stardexs.com shows it, for the menu.</summary>
+    /// <summary>The account's name as stardad.space shows it, for the menu.</summary>
     public string Name { get; set; } = "";
     /// <summary>The automatic syncs the player chose for this PC on the StarDad website; null: none.</summary>
     public SyncSchedule? Schedule { get; set; }

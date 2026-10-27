@@ -1,8 +1,8 @@
 # Builds each release from this repository's public source, on GitHub's machines, when a version tag (v1.2.3)
 # is pushed. GitHub then signs a record (an attestation) saying exactly which commit and workflow built each
 # file, so anyone can check a download came from this code:
-#   gh attestation verify StarDadCompanion.exe --repo aj3/stardexs-companion
-# stardexs.com publishes these same files; the update signature is added separately, with a key kept offline.
+#   gh attestation verify StarDadCompanion.exe --repo aj3/stardad-companion
+# stardad.space publishes these same files; the update signature is added separately, with a key kept offline.
 name: Release
 
 on:

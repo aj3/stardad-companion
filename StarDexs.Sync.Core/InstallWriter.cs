@@ -94,7 +94,7 @@ public sealed class InstallWriter(string dataFolder, Func<bool>? gameRunning = n
     }
 
     /// <summary>
-    /// Whatever stardexs.com sends must be what the game reads: UTF-8 text, nothing binary (no control
+    /// Whatever stardad.space sends must be what the game reads: UTF-8 text, nothing binary (no control
     /// characters but tabs and line breaks), made of "key=value" lines. The game's own file has a few
     /// entries whose text runs over several lines, so a handful of lines without "=" are allowed, but no
     /// more than one in a hundred, and it must start with a "key=value" line. A program, an error page or

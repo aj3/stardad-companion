@@ -13,7 +13,7 @@ namespace StarDexs.Sync;
 
 /// <summary>
 /// The tray icon and everything behind its menu. A sync happens when the player presses "Send to my PC" in
-/// their stardexs.com account (the stardexs-sync: link) or "Sync" in the panel, or at the times they chose
+/// their stardad.space account (the stardexs-sync: link) or "Sync" in the panel, or at the times they chose
 /// for this PC in their account (off unless they turn it on), and only for an account linked on this PC.
 /// Watching for a game update reads build_manifest.id on this PC; nothing goes online for it.
 /// The tray icon is plain Win32 on the UI thread (Avalonia runs the message loop); its panel is themed like
@@ -87,7 +87,7 @@ internal sealed class TrayApp : IPanelActions
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return old; }
     }
 
-    // Release builds only ever talk to stardexs.com. Debug builds can point at a local copy of the site.
+    // Release builds only ever talk to stardad.space. Debug builds can point at a local copy of the site.
     private static Uri Site()
     {
 #if DEBUG
@@ -156,7 +156,7 @@ internal sealed class TrayApp : IPanelActions
         foreach (var account in _engine.DueAccounts(DateTimeOffset.UtcNow)) await SyncAsync(account, manual: false);
     }
 
-    /// <summary>Asks stardexs.com for the schedule the player just saved for this PC; nothing is read or installed.</summary>
+    /// <summary>Asks stardad.space for the schedule the player just saved for this PC; nothing is read or installed.</summary>
     private async Task RefreshScheduleAsync(string? account)
     {
         // The page opens the link as it saves; give the save a moment to land first.
@@ -205,7 +205,7 @@ internal sealed class TrayApp : IPanelActions
             Balloon("The game updated", "Your StarDad file is for the last patch. Open your StarDad account and press \"Send to my PC\" when the new one is ready.");
             return;
         }
-        // The player asked for a sync when the game updates. If stardexs.com hasn't built files for the new
+        // The player asked for a sync when the game updates. If stardad.space hasn't built files for the new
         // patch yet, this sends the logs and says so; a timed sync or "Send to my PC" fetches the file later.
         foreach (var account in accounts) await SyncAsync(account, manual: false);
     }
@@ -568,7 +568,7 @@ internal sealed class TrayApp : IPanelActions
 
     // ---- updating, only when the player asks --------------------------------------------------------------
 
-    /// <summary>Asks stardexs.com for the newest signed release; offers it in the panel if it's newer.</summary>
+    /// <summary>Asks stardad.space for the newest signed release; offers it in the panel if it's newer.</summary>
     private async Task FindUpdateAsync(bool quiet)
     {
         if (!quiet) SetStatus("Checking for updates…");

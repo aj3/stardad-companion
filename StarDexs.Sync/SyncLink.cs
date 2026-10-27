@@ -4,11 +4,11 @@ using Microsoft.Win32;
 namespace StarDexs.Sync;
 
 /// <summary>
-/// The <c>stardexs-sync:</c> link behind stardexs.com's "Send to my PC" button (<c>sync/</c>) and its
+/// The <c>stardexs-sync:</c> link behind stardad.space's "Send to my PC" button (<c>sync/</c>) and its
 /// "Save schedule" button (<c>schedule/</c>). Registered for the current player only. The only part read is
 /// an optional account id (16 hex characters) that picks which account already linked on this PC; anything
-/// else is ignored. Any page can open the link, so all it can ever do is start the same sync with stardexs.com
-/// that the tray menu's "Sync" does, or ask stardexs.com for the schedule the player saved there.
+/// else is ignored. Any page can open the link, so all it can ever do is start the same sync with stardad.space
+/// that the tray menu's "Sync" does, or ask stardad.space for the schedule the player saved there.
 /// </summary>
 internal static partial class SyncLink
 {

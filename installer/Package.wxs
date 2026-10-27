@@ -14,8 +14,8 @@
 
     <Icon Id="StarDadIcon" SourceFile="..\StarDexs.Sync\stardad.ico" />
     <Property Id="ARPPRODUCTICON" Value="StarDadIcon" />
-    <Property Id="ARPURLINFOABOUT" Value="https://stardexs.com/companion" />
-    <Property Id="ARPHELPLINK" Value="https://stardexs.com/support" />
+    <Property Id="ARPURLINFOABOUT" Value="https://stardad.space/companion" />
+    <Property Id="ARPHELPLINK" Value="https://stardad.space/support" />
 
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsFolder" Name="Programs">

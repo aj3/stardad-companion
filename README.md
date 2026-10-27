@@ -1,13 +1,13 @@
 # StarDad Companion
 
 A small Windows tray app that puts your StarDad file into the game when you
-press **Send to my PC** in your stardexs.com account. The code is published so
+press **Send to my PC** in your stardad.space account. The code is published so
 you can check exactly what it does. See [LICENSE](LICENSE): you can read it and
 build it to check it, but not copy or redistribute it.
 
 ## Installing
 
-Download the installer from stardexs.com/companion. It:
+Download the installer from stardad.space/companion. It:
 
 - shows the terms ([installer/License.rtf](installer/License.rtf)), which you
   accept before it installs;
@@ -37,8 +37,8 @@ Windows backend is included.
 
 It doesn't listen on a network port or update itself without you pressing
 **Update**.
-Nobody else can make it do anything, not even stardexs.com's own staff: the
-website has no way to reach your PC. The app only talks to stardexs.com when
+Nobody else can make it do anything, not even stardad.space's own staff: the
+website has no way to reach your PC. The app only talks to stardad.space when
 you press **Send to my PC** (or **Sync** in its menu), or at the times you chose
 for that PC under **Automatic sync** in your account, and only for an account
 you linked on this PC yourself.
@@ -55,7 +55,7 @@ When you do, it:
    out only two things: received blueprint names with their date, and
    completed contract titles with their mission id. It sends those to that
    account.
-2. Asks stardexs.com whether that account's file is current. If not, it
+2. Asks stardad.space whether that account's file is current. If not, it
    downloads it.
 3. If you agreed when you set it up, it installs the file:
    - It waits until the game is closed. It checks only the local process list
@@ -63,7 +63,7 @@ When you do, it:
    - It writes a temporary file beside `global.ini` and swaps it in, so the
      game never sees half a file.
    - In `user.cfg`, only the `g_language` and `g_languageAudio` lines change.
-   - It tells stardexs.com the file's SHA-256 hash, so the website can keep
+   - It tells stardad.space the file's SHA-256 hash, so the website can keep
      that file as your backup.
 
 ## What it touches
@@ -81,7 +81,7 @@ another tool or one you edited, without asking you first.
 
 ## Backups
 
-The PC keeps no backup copies. stardexs.com keeps the last two files you
+The PC keeps no backup copies. stardad.space keeps the last two files you
 installed, and your account page lists them. From the tray menu you can:
 
 - **Put previous file back:** downloads the older of the two and installs it.
@@ -100,7 +100,7 @@ until you press **Send to my PC**.
 
 ## More than one account
 
-You can link several stardexs.com accounts on one PC. Each account's
+You can link several stardad.space accounts on one PC. Each account's
 **Send to my PC** link includes that account's public id: 16 characters that
 aren't secret. The app uses that id only to choose between the accounts
 already linked on that PC. Each account gets its own token. Whichever account
@@ -113,7 +113,7 @@ This app registers that link for your Windows account only.
 
 The app reads nothing from the link except that id, and it must be exactly 16
 hexadecimal characters. Any web page can open the link, but all it can do is
-start the same sync with stardexs.com for an account you already linked. It
+start the same sync with stardad.space for an account you already linked. It
 can't pass in data, a different site, or a command.
 
 ## Downloads must be game text
@@ -137,7 +137,7 @@ Then it exits. See `StarDexs.Sync.Core/FolderAccess.cs`.
 
 ## Linking
 
-The app shows a code, opens stardexs.com, and checks every 3 seconds until you
+The app shows a code, opens stardad.space, and checks every 3 seconds until you
 approve the code, for up to 10 minutes. It then stores that account's token,
 encrypted with Windows DPAPI, so only your Windows account on this PC can read
 it.
@@ -158,7 +158,7 @@ built into the app (`Updater.ReleaseKey`):
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEXBFazEisW/LQvPtUqhTjkeDxaSs04SWzT1VHURNF/9LlbAJwjKcv//Y1rOwia+84yXwdyuvW94o/JwqvX8RWqA==
 ```
 
-`stardexs.com/downloads/companion.json` names the release, its SHA-256 and the
+`stardad.space/downloads/companion.json` names the release, its SHA-256 and the
 signature over both (see `Updater.SignedText`). The app installs an update
 only if:
 
@@ -171,7 +171,7 @@ wasn't signed with that key, or roll you back to an older one.
 
 ## Checking a download
 
-Each release's SHA-256 is on stardexs.com and in `companion.json`. To check
+Each release's SHA-256 is on stardad.space and in `companion.json`. To check
 the code, build the commit for that release with the .NET 10 SDK:
 
 ```
@@ -184,6 +184,6 @@ Windows code signing (so Windows names the publisher) is planned.
 
 | Folder | What's in it |
 |---|---|
-| `StarDexs.Sync.Core` | Reading logs, finding the game, safe writes, the stardexs.com calls. No user interface. |
+| `StarDexs.Sync.Core` | Reading logs, finding the game, safe writes, the stardad.space calls. No user interface. |
 | `StarDexs.Sync` | The tray icon (plain Win32), the panel (Avalonia), and the dialogs. |
 | `StarDexs.Sync.Tests` | Tests. They use temporary folders and a fake site, never a real game install. |

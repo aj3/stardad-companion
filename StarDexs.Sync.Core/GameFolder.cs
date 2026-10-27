@@ -64,7 +64,7 @@ public static partial class GameFolder
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException) { return null; }
     }
 
-    /// <summary>The build number stardexs.com puts at the end of a patch name, like 12913470 in "4.10.2-live.12913470".</summary>
+    /// <summary>The build number stardad.space puts at the end of a patch name, like 12913470 in "4.10.2-live.12913470".</summary>
     public static string? PatchBuild(string? patch) =>
         patch?[(patch.LastIndexOf('.') + 1)..] is { Length: > 0 } build && build.All(char.IsAsciiDigit) ? build : null;
 

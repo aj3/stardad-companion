@@ -8,7 +8,7 @@ using Avalonia.Themes.Fluent;
 namespace StarDexs.Sync;
 
 /// <summary>
-/// The panel's colours: stardexs.com's teal on a softer slate than the website, with gentle contrast and no
+/// The panel's colours: stardad.space's teal on a softer slate than the website, with gentle contrast and no
 /// bright red, so it's easy on the eyes next to the taskbar.
 /// </summary>
 internal static class Palette

@@ -3,7 +3,7 @@ using System.Globalization;
 namespace StarDexs.Sync.Core;
 
 /// <summary>
-/// When the player asked, in their stardexs.com account, for this PC to sync on its own: every few hours, or
+/// When the player asked, in their stardad.space account, for this PC to sync on its own: every few hours, or
 /// once a day at a set time on this PC's clock, and/or when the game updates. Off unless they turned it on.
 /// </summary>
 public sealed record SyncSchedule(int EveryHours, int? AtMinute, bool OnGameUpdate)
@@ -13,7 +13,7 @@ public sealed record SyncSchedule(int EveryHours, int? AtMinute, bool OnGameUpda
 
     public bool IsOn => EveryHours > 0 || OnGameUpdate;
 
-    /// <summary>The schedule stardexs.com sent, or null if it isn't one this app knows (then nothing runs on its own).</summary>
+    /// <summary>The schedule stardad.space sent, or null if it isn't one this app knows (then nothing runs on its own).</summary>
     public static SyncSchedule? From(int everyHours, int? atMinute, bool onGameUpdate)
     {
         if (!Hours.Contains(everyHours) || atMinute is < 0 or >= 24 * 60) return null;

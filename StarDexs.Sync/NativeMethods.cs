@@ -63,6 +63,13 @@ internal static unsafe partial class NativeMethods
         public nint hBalloonIcon;
     }
 
+    /// <summary>Windows 11: rounded corners for the borderless panel (ignored on Windows 10).</summary>
+    public const uint DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    public const int DWMWCP_ROUND = 2;
+
+    [LibraryImport("dwmapi.dll")]
+    public static partial int DwmSetWindowAttribute(nint window, uint attribute, int* value, uint size);
+
     [LibraryImport("user32.dll", SetLastError = true)]
     public static partial ushort RegisterClassExW(WNDCLASSEXW* wndClass);
 

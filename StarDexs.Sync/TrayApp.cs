@@ -256,7 +256,7 @@ internal sealed class TrayApp : IPanelActions
         _look = ok ? SyncBar.Look.Hit : SyncBar.Look.Missed;
         _share = ok ? 1 : _share;
         _status = message;
-        _lastSync = $"Last sync {DateTime.Now:t}";
+        _lastSync = "Last synced " + DateTime.Now.ToString("h:mm tt", System.Globalization.CultureInfo.InvariantCulture);
         Refresh();
     }
 
@@ -559,7 +559,6 @@ internal sealed class TrayApp : IPanelActions
             _release = found;
             if (found is not null)
             {
-                _status = $"StarDexs Companion {found.Version.ToString(3)} is ready to install.";
                 Balloon("A new StarDexs Companion is ready", $"Version {found.Version.ToString(3)} is signed and ready. Click the tray icon and press Update.");
             }
             else if (!quiet) _status = $"You have the newest StarDexs Companion ({_version}).";

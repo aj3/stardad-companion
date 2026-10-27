@@ -6,16 +6,16 @@ using Avalonia.Threading;
 namespace StarDexs.Sync;
 
 /// <summary>
-/// The sync bar: the track fills stage by stage while a tracer runs along it to the red crosshair (the sync
-/// icon). A finished sync lands on the target (it flashes and fills); one that stopped short greys it out.
+/// The sync badge beside the panel's status. Idle: a quiet crosshair. Syncing: the crosshair turns slowly while
+/// a ring fills around it, stage by stage. Done: a green check that pops once. Stopped: an amber "!".
 /// Drawn here, frame by frame, only while something is moving.
 /// </summary>
 internal sealed class SyncBar : Control
 {
     public enum Look { Idle, Running, Hit, Missed }
 
-    private const double Reticle = 26, Gap = 10, TrackHeight = 6;
-    private static readonly TimeSpan TracerLap = TimeSpan.FromMilliseconds(1100), HitTime = TimeSpan.FromMilliseconds(700);
+    private const double Size = 44, Ring = 19, RingWidth = 2.5;
+    private static readonly TimeSpan Turn = TimeSpan.FromSeconds(4), PopTime = TimeSpan.FromMilliseconds(450);
     private readonly DispatcherTimer _frames = new() { Interval = TimeSpan.FromMilliseconds(16) };
     private DateTime _since = DateTime.UtcNow;
     private Look _look = Look.Idle;
@@ -23,7 +23,7 @@ internal sealed class SyncBar : Control
 
     public SyncBar()
     {
-        Height = Reticle + 4;
+        Width = Height = Size;
         _frames.Tick += (_, _) => InvalidateVisual();
     }
 
@@ -37,67 +37,89 @@ internal sealed class SyncBar : Control
         InvalidateVisual();
     }
 
+    private Color Colour => _look switch
+    {
+        Look.Running => Palette.Accent,
+        Look.Hit => Palette.Good,
+        Look.Missed => Palette.Warn,
+        _ => Palette.Soft,
+    };
+
     public override void Render(DrawingContext context)
     {
-        var now = DateTime.UtcNow;
-        var elapsed = now - _since;
-        // The fill eases towards its share instead of jumping.
-        _shown += (_share - _shown) * 0.15;
-        var still = _look is Look.Idle or Look.Missed && Math.Abs(_shown - _share) < 0.001
-                    || _look == Look.Hit && elapsed > HitTime;
-        if (still) _frames.Stop();
+        var elapsed = DateTime.UtcNow - _since;
+        // The ring eases towards its share instead of jumping.
+        _shown += (_share - _shown) * 0.12;
+        var settled = Math.Abs(_shown - _share) < 0.001;
+        if (settled && (_look is Look.Idle or Look.Missed || _look == Look.Hit && elapsed > PopTime)) _frames.Stop();
 
-        var width = Bounds.Width - Reticle - Gap;
-        var middle = Bounds.Height / 2;
-        var track = new Rect(0, middle - TrackHeight / 2, Math.Max(0, width), TrackHeight);
-        context.DrawRectangle(Palette.Brush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)), null, track, 3, 3);
-        if (_shown > 0.002)
-        {
-            var fill = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-                GradientStops = { new GradientStop(Color.FromArgb(0x59, Palette.Accent.R, Palette.Accent.G, Palette.Accent.B), 0), new GradientStop(Palette.Accent, 1) },
-            };
-            context.DrawRectangle(fill, null, track.WithWidth(track.Width * _shown), 3, 3);
-        }
+        var centre = new Point(Bounds.Width / 2, Bounds.Height / 2);
+        var colour = Colour;
+        var pop = _look == Look.Hit ? 1 + 0.12 * Math.Sin(Math.Min(1, elapsed / PopTime) * Math.PI) : 1;
+        context.DrawEllipse(Palette.Tint(colour, 0.14), null, centre, Ring * pop, Ring * pop);
 
         if (_look == Look.Running)
         {
-            // The tracer: a hot dot running from the start of the track into the reticle.
-            var lap = elapsed.TotalMilliseconds % TracerLap.TotalMilliseconds / TracerLap.TotalMilliseconds;
-            var x = -9 + (width + Gap + Reticle / 2 + 9) * lap;
-            var glow = new RadialGradientBrush
-            {
-                GradientStops = { new GradientStop(Colors.White, 0), new GradientStop(Palette.Target, 0.45), new GradientStop(Color.FromArgb(0, 0xFF, 0x4D, 0x4D), 1) },
-            };
-            context.DrawEllipse(glow, null, new Point(x, middle), 9, 5);
+            context.DrawEllipse(null, new Pen(Palette.Tint(colour, 0.18), RingWidth), centre, Ring, Ring);
+            DrawArc(context, centre, Math.Max(0.04, _shown), new Pen(Palette.Brush(colour), RingWidth, lineCap: PenLineCap.Round));
         }
 
-        DrawReticle(context, new Point(Bounds.Width - Reticle / 2, middle), elapsed);
+        var pen = new Pen(Palette.Brush(colour), 1.8, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+        switch (_look)
+        {
+            case Look.Hit:
+                var s = 1.15 * pop;
+                var check = new StreamGeometry();
+                using (var draw = check.Open())
+                {
+                    draw.BeginFigure(centre + new Point(-6 * s, 0.5 * s), false);
+                    draw.LineTo(centre + new Point(-1.8 * s, 4.6 * s));
+                    draw.LineTo(centre + new Point(6.5 * s, -4.8 * s));
+                    draw.EndFigure(false);
+                }
+                context.DrawGeometry(null, new Pen(Palette.Brush(colour), 2.4, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), check);
+                break;
+            case Look.Missed:
+                context.DrawLine(new Pen(Palette.Brush(colour), 2.4, lineCap: PenLineCap.Round), centre + new Point(0, -6), centre + new Point(0, 2));
+                context.DrawEllipse(Palette.Brush(colour), null, centre + new Point(0, 6.5), 1.4, 1.4);
+                break;
+            default:
+                var angle = _look == Look.Running ? elapsed / Turn * Math.PI * 2 : 0;
+                DrawReticle(context, centre, angle, pen);
+                break;
+        }
     }
 
-    private void DrawReticle(DrawingContext context, Point centre, TimeSpan elapsed)
+    /// <summary>A small crosshair: a circle, a dot, and four short ticks, turned by <paramref name="angle"/>.</summary>
+    private static void DrawReticle(DrawingContext context, Point centre, double angle, Pen pen)
     {
-        var colour = _look == Look.Missed ? Palette.Soft : Palette.Target;
-        var scale = 1.0;
-        if (_look == Look.Running) scale = 1 - 0.08 * Math.Sin(elapsed.TotalMilliseconds / TracerLap.TotalMilliseconds * Math.PI * 2);
-        var hit = _look == Look.Hit ? Math.Min(1, elapsed.TotalMilliseconds / HitTime.TotalMilliseconds) : 0;
-        if (_look == Look.Hit) scale = 1 + 0.35 * Math.Sin(hit * Math.PI);
-        var outer = Reticle / 2 * 0.82 * scale;
-        var pen = new Pen(Palette.Brush(colour), 2, lineCap: PenLineCap.Round);
-        if (_look == Look.Hit)
+        const double circle = 7.5, outer = 11.5;
+        context.DrawEllipse(null, pen, centre, circle, circle);
+        context.DrawEllipse(pen.Brush, null, centre, 1.6, 1.6);
+        for (var i = 0; i < 4; i++)
         {
-            // The hit: a ring bursting outwards, fading as it goes.
-            var ring = new Pen(Palette.Brush(Color.FromArgb((byte)(200 * (1 - hit)), colour.R, colour.G, colour.B)), 2);
-            context.DrawEllipse(null, ring, centre, outer + 10 * hit, outer + 10 * hit);
+            var a = angle + i * Math.PI / 2;
+            var direction = new Point(Math.Cos(a), Math.Sin(a));
+            context.DrawLine(pen, centre + direction * (circle - 2.5), centre + direction * outer);
         }
-        context.DrawEllipse(null, pen, centre, outer, outer);
-        context.DrawEllipse(_look == Look.Hit ? Palette.Brush(colour) : null, pen, centre, outer * 0.42, outer * 0.42);
-        var arm = Reticle / 2 * scale;
-        context.DrawLine(pen, centre + new Point(0, -arm), centre + new Point(0, -outer * 0.55));
-        context.DrawLine(pen, centre + new Point(0, arm), centre + new Point(0, outer * 0.55));
-        context.DrawLine(pen, centre + new Point(-arm, 0), centre + new Point(-outer * 0.55, 0));
-        context.DrawLine(pen, centre + new Point(arm, 0), centre + new Point(outer * 0.55, 0));
+    }
+
+    private static void DrawArc(DrawingContext context, Point centre, double share, Pen pen)
+    {
+        if (share >= 0.999)
+        {
+            context.DrawEllipse(null, pen, centre, Ring, Ring);
+            return;
+        }
+        var start = -Math.PI / 2;
+        var end = start + share * Math.PI * 2;
+        var arc = new StreamGeometry();
+        using (var draw = arc.Open())
+        {
+            draw.BeginFigure(centre + new Point(Math.Cos(start), Math.Sin(start)) * Ring, false);
+            draw.ArcTo(centre + new Point(Math.Cos(end), Math.Sin(end)) * Ring, new Avalonia.Size(Ring, Ring), 0, share > 0.5, SweepDirection.Clockwise);
+            draw.EndFigure(false);
+        }
+        context.DrawGeometry(null, pen, arc);
     }
 }

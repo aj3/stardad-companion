@@ -25,12 +25,14 @@ internal static class PanelPreview
 
     public static void Save(string path)
     {
-        (string Id, string Name, string? Schedule)[] accounts = [("a", "AJ (main)", "Auto: Every day at 6:00 PM"), ("b", "Alt account", null)];
+        (string Id, string Name, string? Schedule)[] one = [("a", "ajwuthnow@gmail.com", "Auto: Every day at 6:00 PM")];
+        (string Id, string Name, string? Schedule)[] two = [("a", "ajwuthnow@gmail.com", "Auto: Every day at 6:00 PM"), ("b", "Alt account", null)];
         PanelView[] views =
         [
-            new("Downloading your file…", SyncBar.Look.Running, 0.6, null, accounts, true, true, false, true, true),
-            new("Installed your file for 4.10.2-live.12913470. Restart the game to see it.", SyncBar.Look.Hit, 1, "Last sync 2:14 PM", accounts, true, true, false, true, false, "0.4.0"),
-            new("Couldn't reach stardexs.com. Try again in a moment.", SyncBar.Look.Missed, 0.4, "Last sync 2:16 PM", accounts, true, true, true, true, false),
+            new("Downloading your file…", SyncBar.Look.Running, 0.6, "Last synced 7:26 PM", one, true, true, false, true, true),
+            new("Installed your file for 4.10.2-live.12913470. Restart the game to see it.", SyncBar.Look.Hit, 1, "Last synced 7:26 PM", two, true, true, false, true, false, "0.4.0"),
+            new("Couldn't reach stardexs.com. Try again in a moment.", SyncBar.Look.Missed, 0.4, "Last synced 7:26 PM", one, true, true, true, true, false),
+            new("Press \"Send to my PC\" in your account, or Sync here.", SyncBar.Look.Idle, 0, null, one, true, true, false, false, false),
         ];
         var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 16, Margin = new Thickness(16) };
         var windows = new List<TrayPanel>();

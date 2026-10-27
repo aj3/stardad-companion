@@ -21,12 +21,13 @@ internal static class PanelPreview
         public void CheckForUpdates() { }
         public void Update() { }
         public void Quit() { }
+        public void CycleSyncNotifications() { }
     }
 
     public static void Save(string path)
     {
-        (string Id, string Name, string? Schedule)[] one = [("a", "ajwuthnow@gmail.com", "Auto: Every day at 6:00 PM")];
-        (string Id, string Name, string? Schedule)[] two = [("a", "ajwuthnow@gmail.com", "Auto: Every day at 6:00 PM"), ("b", "Alt account", null)];
+        (string Id, string Name, string? Schedule)[] one = [("a", "sample@example.invalid", "Auto: Every day at 6:00 PM")];
+        (string Id, string Name, string? Schedule)[] two = [("a", "sample@example.invalid", "Auto: Every day at 6:00 PM"), ("b", "Alt account", null)];
         PanelView[] views =
         [
             new("Downloading your file…", SyncBar.Look.Running, 0.6, "Last synced 7:26 PM", one, true, true, false, true, true),

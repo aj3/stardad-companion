@@ -30,6 +30,7 @@ public sealed class DpapiProtector : ISecretProtector
 /// <summary>One stardad.space account linked on this PC. A PC can hold several (players who switch accounts).</summary>
 public sealed class LinkedAccount
 {
+    public PendingSyncResult? PendingResult { get; set; }
     /// <summary>The device token, protected with <see cref="ISecretProtector"/>.</summary>
     public string ProtectedToken { get; set; } = "";
     /// <summary>The account's name as stardad.space shows it, for the menu.</summary>
@@ -71,6 +72,8 @@ public sealed class LogFile
 /// <summary>Where the helper is up to: who it's linked to, what it read and installed, what the player agreed to.</summary>
 public sealed class SyncState
 {
+    /// <summary>Silent by default; optional notifications never affect website reporting.</summary>
+    public string SyncNotifications { get; set; } = "silent";
     /// <summary>
     /// 3 since logs are kept as what they held (not how far they were read). A version 2 file carries over:
     /// its read positions are dropped and every log is read once more. Anything older starts fresh.
@@ -98,6 +101,8 @@ public sealed class SyncState
     /// <summary>What each log in the game folder held, by file name.</summary>
     public Dictionary<string, LogFile> Logs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
+
+public sealed record PendingSyncResult(string RunId, string Message, bool Ok);
 
 /// <summary>Reads and writes <see cref="SyncState"/> as JSON in the app's own folder; a damaged or older file starts fresh.</summary>
 public sealed class StateStore(string folder, ISecretProtector protector)

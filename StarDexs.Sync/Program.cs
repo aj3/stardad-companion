@@ -10,6 +10,17 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length is 1 or 2 && args[0] == "--check-panel-layout")
+        {
+            try
+            {
+                AppBuilder.Configure(() => new CompanionApp(null)).UseWin32().UseSkia()
+                    .With(new Win32PlatformOptions { RenderingMode = [Win32RenderingMode.Software] }).SetupWithoutStarting();
+                PanelLayoutCheck.Run(args.Length == 2 ? args[1] : null);
+                return 0;
+            }
+            catch (Exception exception) { Console.Error.WriteLine(exception.Message); return 1; }
+        }
         // "--grant <LIVE folder> <user SID>": the one administrator step, started (with Windows' own prompt) by
         // the tray app after the player agrees. It changes permissions on the places the file goes and exits.
         if (args is ["--grant", var live, var sid])

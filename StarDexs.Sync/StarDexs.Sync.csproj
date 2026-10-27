@@ -10,7 +10,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <AssemblyName>StarDadCompanion</AssemblyName>
     <RootNamespace>StarDexs.Sync</RootNamespace>
-    <Version>0.4.1</Version>
+    <Version>0.4.2</Version>
     <Product>StarDad Companion</Product>
     <Company>AJ Solutions, LLC</Company>
     <Description>Puts your StarDad file in the game when you ask, or on your schedule.</Description>

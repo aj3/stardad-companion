@@ -46,6 +46,7 @@ public sealed class FakeSite : HttpMessageHandler
     public string Settings { get; set; } = "s1";
     public byte[] File { get; set; } = Encoding.UTF8.GetBytes("key=Value\n");
     public bool Unlinked { get; set; }
+    public int ConfirmationFailures { get; set; }
     public byte[]? Previous { get; set; }
     /// <summary>What the account holds, like the real site: each blueprint and contract once.</summary>
     public HashSet<string> Owned { get; } = new(StringComparer.Ordinal);
@@ -58,6 +59,8 @@ public sealed class FakeSite : HttpMessageHandler
         var path = request.RequestUri!.AbsolutePath;
         var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancel);
         Requests.Add((path, request.Headers.Authorization?.Parameter, body));
+        if (path == "/api/sync/progress" && body.Contains("\"stage\":\"finished\"") && ConfirmationFailures > 0)
+        { ConfirmationFailures--; return new(HttpStatusCode.ServiceUnavailable); }
         if (Unlinked && path.StartsWith("/api/sync/", StringComparison.Ordinal) && !path.Contains("/link/")) return new(HttpStatusCode.Unauthorized);
         return path switch
         {

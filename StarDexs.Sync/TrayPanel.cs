@@ -11,7 +11,7 @@ namespace StarDexs.Sync;
 internal sealed record PanelView(
     string Status, SyncBar.Look Look, double Share, string? LastSync,
     IReadOnlyList<(string Id, string Name, string? Schedule)> Accounts, bool HasFolder, bool InstallAgreed, bool NeedsAccess, bool HasInstalled, bool Busy,
-    string? UpdateTo = null);
+    string? UpdateTo = null, string Notifications = "silent");
 
 /// <summary>What the panel's buttons do; the tray app does it.</summary>
 internal interface IPanelActions
@@ -28,6 +28,7 @@ internal interface IPanelActions
     void CheckForUpdates();
     void Update();
     void Quit();
+    void CycleSyncNotifications();
 }
 
 /// <summary>
@@ -52,6 +53,8 @@ internal sealed class TrayPanel : Window
     private readonly StackPanel _menu = new() { Spacing = 1 };
     private readonly StackPanel _extra = new() { Spacing = 1, IsVisible = false };
     private readonly Button _moreToggle;
+    private readonly StackPanel _body;
+    private readonly Control _footer;
     private PanelView? _view;
 
     public TrayPanel(IPanelActions actions)
@@ -75,6 +78,7 @@ internal sealed class TrayPanel : Window
             SetToggle();
             Fit();
             Place();
+            QueueFit();
         }, closes: false);
 
         var header = new Grid
@@ -106,7 +110,7 @@ internal sealed class TrayPanel : Window
         };
         quit.Classes.Add("row");
         quit.Click += (_, _) => { Hide(); _actions.Quit(); };
-        var footer = new Grid
+        _footer = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto"),
             Margin = new Thickness(16, 2, 10, 10),
@@ -117,23 +121,32 @@ internal sealed class TrayPanel : Window
             },
         };
 
+        _body = new StackPanel
+        {
+            Children =
+            {
+                header,
+                status,
+                new StackPanel { Margin = new Thickness(12, 8, 12, 0), Spacing = 8, Children = { _notices, _accounts } },
+                new Border { Height = 1, Background = Palette.Brush(Palette.Border), Margin = new Thickness(16, 12, 16, 6) },
+                new StackPanel { Margin = new Thickness(8, 0), Children = { _menu, _moreToggle, _extra } },
+            },
+        };
+        var scroll = new ScrollViewer
+        {
+            Content = _body, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+        };
+        Grid.SetRow(_footer, 1);
         Content = new Border
         {
             Background = Palette.Brush(Palette.Background),
             BorderBrush = Palette.Brush(Palette.Border),
             BorderThickness = new Thickness(1),
-            Child = new StackPanel
+            Child = new Grid
             {
-                Children =
-                {
-                    header,
-                    status,
-                    new StackPanel { Margin = new Thickness(12, 8, 12, 0), Spacing = 8, Children = { _notices, _accounts } },
-                    new Border { Height = 1, Background = Palette.Brush(Palette.Border), Margin = new Thickness(16, 12, 16, 6) },
-                    new StackPanel { Margin = new Thickness(8, 0), Children = { _menu, _moreToggle, _extra } },
-                    new Border { Height = 1, Background = Palette.Brush(Palette.Border), Margin = new Thickness(16, 6, 16, 4) },
-                    footer,
-                },
+                RowDefinitions = new RowDefinitions("*,Auto"),
+                Children = { scroll, _footer },
             },
         };
         Deactivated += (_, _) => Hide();
@@ -150,6 +163,7 @@ internal sealed class TrayPanel : Window
         Show(view);
         Fit();
         Place();
+        QueueFit();
         Show();
         Activate();
         // Fonts and templates settle once it's on screen: measure again so it fits exactly.
@@ -162,11 +176,20 @@ internal sealed class TrayPanel : Window
     /// <summary>The panel's height for its contents right now, measured before it's drawn.</summary>
     private void Fit()
     {
-        if (Content is not Control content) return;
-        content.Measure(new Size(PanelWidth, double.PositiveInfinity));
+        var screen = _anchor is { } anchor ? Screens.ScreenFromPoint(anchor) : Screens.Primary;
+        var available = screen is null ? 720 : Math.Max(1, screen.WorkingArea.Height / screen.Scaling - 16);
+        _body.InvalidateMeasure();
+        _body.Measure(new Size(PanelWidth - 2, double.PositiveInfinity));
+        _footer.Measure(new Size(PanelWidth - 2, double.PositiveInfinity));
         Width = PanelWidth;
-        Height = Math.Ceiling(content.DesiredSize.Height);
+        Height = Math.Min(Math.Ceiling(_body.DesiredSize.Height + _footer.DesiredSize.Height + 2), Math.Min(available, MaxHeight));
     }
+
+    private void QueueFit() => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+    {
+        Fit();
+        if (IsVisible) Place();
+    }, Avalonia.Threading.DispatcherPriority.Render);
 
     /// <summary>Just above the point the player clicked (the tray icon), inside that screen's work area.</summary>
     private void Place()
@@ -195,7 +218,7 @@ internal sealed class TrayPanel : Window
     {
         _view = view;
         _badge.Show(view.Look, view.Share);
-        Avalonia.Threading.Dispatcher.UIThread.Post(() => { Fit(); if (IsVisible) Place(); }, Avalonia.Threading.DispatcherPriority.Render);
+        QueueFit();
         _headline.Text = Headline(view);
         _detail.Text = view.Status;
         _detail.IsVisible = view.Status.Length > 0 && view.Status != _headline.Text;
@@ -227,6 +250,7 @@ internal sealed class TrayPanel : Window
         _menu.Children.Clear();
         _menu.Children.Add(Row(Globe, "Open the StarDad website", _actions.OpenSite));
         _menu.Children.Add(Row(Folder, "Change game folder…", _actions.ChangeFolder));
+        _menu.Children.Add(Row(Refresh, "Sync notifications: " + view.Notifications + " (change)", _actions.CycleSyncNotifications, closes: false));
 
         _extra.Children.Clear();
         if (view.Accounts.Count > 0) _extra.Children.Add(Row(Link, "Link another account…", _actions.Link));

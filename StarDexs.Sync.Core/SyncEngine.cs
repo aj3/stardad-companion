@@ -3,7 +3,8 @@ namespace StarDexs.Sync.Core;
 /// <summary>What one pass did, for the tray's tooltip and notifications.</summary>
 public sealed record SyncReport(
     string Message, bool Installed = false, bool NeedsPermission = false, bool NotLinked = false, bool WaitingForGame = false,
-    bool UnknownFile = false, int NewBlueprints = 0, int NewCompleted = 0, string? HelperLatest = null);
+    bool UnknownFile = false, int NewBlueprints = 0, int NewCompleted = 0, string? HelperLatest = null,
+    bool Completed = false, bool ConfirmationPending = false);
 
 /// <summary>Where a sync is up to, for the app's sync bar and the account page's.</summary>
 public enum SyncStage { Reading, Sending, Checking, Downloading, Installing, Finished }
@@ -34,18 +35,48 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         var state = store.Load();
         account ??= state.LastAccount;
         var token = store.Token(state, account);
-        var report = await RunLinkedAsync(state, account, token, progress, cancel);
+        var runId = Guid.NewGuid().ToString("N");
+        if (token is not null && account is not null && state.Accounts[account].PendingResult is { } pending)
+        {
+            if (!await ConfirmAsync(token, pending, cancel))
+                return new SyncReport("The previous sync still needs confirmation from StarDad. Try again when the website is reachable.", ConfirmationPending: true);
+            state.Accounts[account].PendingResult = null;
+            store.Save(state);
+        }
+        var report = await RunLinkedAsync(state, account, token, progress, cancel, runId);
         progress?.Report(SyncStage.Finished);
-        if (token is not null && !report.NotLinked) await TellSiteAsync(token, SyncStage.Finished, report, cancel);
+        if (token is not null && account is not null && !report.NotLinked)
+        {
+            var result = new PendingSyncResult(runId, report.Message, Succeeded(report));
+            state.Accounts[account].PendingResult = result;
+            store.Save(state);
+            if (await ConfirmAsync(token, result, cancel)) state.Accounts[account].PendingResult = null;
+            else report = report with { ConfirmationPending = true, Message = report.Message + " Website confirmation is pending; it will retry at the next sync." };
+            store.Save(state);
+        }
         return report;
     }
 
-    private async Task<SyncReport> RunLinkedAsync(SyncState state, string? account, string? token, IProgress<SyncStage>? progress, CancellationToken cancel)
+    private async Task<bool> ConfirmAsync(string token, PendingSyncResult result, CancellationToken cancel)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try { await api.ProgressAsync(token, "finished", result.Message, result.Ok, cancel, result.RunId); return true; }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or NotLinkedException)
+            {
+                if (cancel.IsCancellationRequested) return false;
+                if (attempt < 2) await Task.Delay(250 * (attempt + 1), cancel);
+            }
+        }
+        return false;
+    }
+
+    private async Task<SyncReport> RunLinkedAsync(SyncState state, string? account, string? token, IProgress<SyncStage>? progress, CancellationToken cancel, string runId)
     {
         async Task Stage(SyncStage stage)
         {
             progress?.Report(stage);
-            await TellSiteAsync(token!, stage, null, cancel);
+            await TellSiteAsync(token!, stage, null, cancel, runId);
         }
 
         if (token is null)
@@ -66,8 +97,13 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
 
             if (status.Patch is null) return Done(state, Report("StarDad has no file for this patch yet."));
             var current = status.Patch == state.InstalledPatch && status.Settings == state.InstalledSettings && account == state.InstalledAccount
-                          && File.Exists(GameFolder.GlobalIniPath(state.GameFolder!));
-            if (current) return Done(state, Report($"Up to date ({status.Patch})."));
+                          && File.Exists(GameFolder.GlobalIniPath(state.GameFolder!))
+                          && state.InstalledSha == InstallWriter.Sha256(File.ReadAllBytes(GameFolder.GlobalIniPath(state.GameFolder!)));
+            if (current)
+            {
+                await api.InstalledAsync(token, state.InstalledPatch!, state.InstalledSha!, cancel);
+                return Done(state, Report($"Up to date ({status.Patch}).") with { Completed = true });
+            }
             if (!state.InstallAgreed) return Done(state, Report($"A file for {status.Patch} is ready; allow installing to put it in place."));
 
             await Stage(SyncStage.Downloading);
@@ -79,7 +115,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
                 case WriteOutcome.Written or WriteOutcome.AlreadyCurrent:
                     Installed(state, account!, file.Patch, file.Settings, result.Sha256!);
                     await api.InstalledAsync(token, file.Patch, result.Sha256!, cancel);
-                    return Done(state, Report(result.Message, installed: result.Outcome == WriteOutcome.Written));
+                    return Done(state, Report(result.Message, installed: result.Outcome == WriteOutcome.Written) with { Completed = true });
                 case WriteOutcome.NeedsPermission: return Done(state, Report(result.Message, permission: true));
                 case WriteOutcome.GameRunning: return Done(state, Report(result.Message, waiting: true));
                 case WriteOutcome.UnknownFile: return Done(state, Report(result.Message, unknown: true));
@@ -94,6 +130,10 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         catch (HttpRequestException)
         {
             return Done(state, new SyncReport("Couldn't reach the StarDad website. Try again in a moment."));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return Done(state, new SyncReport("Couldn't read the installed file. Check folder access and try again."));
         }
         catch (TaskCanceledException) when (!cancel.IsCancellationRequested)
         {
@@ -137,7 +177,8 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         if (result.Outcome == WriteOutcome.Written)
             state.InstalledAccount = state.InstalledPatch = state.InstalledSettings = state.InstalledSha = null;
         return Done(state, new SyncReport(result.Message, NeedsPermission: result.Outcome == WriteOutcome.NeedsPermission,
-            WaitingForGame: result.Outcome == WriteOutcome.GameRunning, UnknownFile: result.Outcome == WriteOutcome.UnknownFile));
+            WaitingForGame: result.Outcome == WriteOutcome.GameRunning, UnknownFile: result.Outcome == WriteOutcome.UnknownFile,
+            Completed: result.Outcome is WriteOutcome.Written or WriteOutcome.AlreadyCurrent));
     }
 
     /// <summary>
@@ -194,8 +235,9 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         state.Logs = logs;
         if (findings.IsEmpty) return (0, 0);
         await sending();
-        var blueprints = findings.Blueprints.Count == 0 ? 0
-            : await api.SendBlueprintsAsync(token, findings.Blueprints.Values.OrderBy(b => b.FirstSeen).Take(MaxBlueprintsPerSend), cancel);
+        var blueprints = 0;
+        foreach (var chunk in findings.Blueprints.Values.OrderBy(b => b.FirstSeen).Chunk(MaxBlueprintsPerSend))
+            blueprints += await api.SendBlueprintsAsync(token, chunk, cancel);
         var completed = 0;
         foreach (var chunk in findings.Completed.Chunk(MaxCompletedPerSend))
             completed += await api.SendCompletedAsync(token, chunk.ToDictionary(c => c.Key, c => c.Value), cancel);
@@ -261,16 +303,15 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     }
 
     /// <summary>Best effort: a stage the website doesn't hear about never stops the sync.</summary>
-    private async Task TellSiteAsync(string token, SyncStage stage, SyncReport? result, CancellationToken cancel)
+    private async Task TellSiteAsync(string token, SyncStage stage, SyncReport? result, CancellationToken cancel, string? runId = null)
     {
-        try { await api.ProgressAsync(token, stage.Name(), result?.Message, result is not null && Succeeded(result), cancel); }
+        try { await api.ProgressAsync(token, stage.Name(), result?.Message, result is not null && Succeeded(result), cancel, runId); }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or NotLinkedException) { }
     }
 
     /// <summary>The sync did what it could: installed, already current, or nothing to install yet.</summary>
     public static bool Succeeded(SyncReport report) =>
-        !report.NotLinked && !report.NeedsPermission && !report.WaitingForGame && !report.UnknownFile
-        && !report.Message.StartsWith("Couldn't", StringComparison.Ordinal) && !report.Message.StartsWith("Choose", StringComparison.Ordinal) && !report.Message.Contains("took too long", StringComparison.Ordinal);
+        (report.Completed || report.Installed) && !report.ConfirmationPending;
 
     /// <summary>Unlinks this PC from the account, on the StarDad website too (best effort), so its token stops working.</summary>
     public async Task<string> UnlinkAsync(string account, CancellationToken cancel)

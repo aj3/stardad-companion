@@ -1,12 +1,12 @@
 """Draw StarDad's mark (a "42" in a ring) and everything made from it, in the Guide's colours.
 
 Writes:
-  helper/StarDexs.Sync/stardad.ico           the app's icon (16 to 256 px)
-  helper/installer/banner.bmp, dialog.bmp    the installer's pictures (WiX: 493x58 and 493x312)
-  site/.../wwwroot/favicon.png, img/icon.png the website's icons (64 and 256 px)
-  site/.../wwwroot/img/logo-120.png          the logo Google's sign-in branding asks for
+  src/companion/StarDexs.Sync/stardad.ico           the app's icon (16 to 256 px)
+  src/companion/installer/banner.bmp, dialog.bmp    the installer's pictures (WiX: 493x58 and 493x312)
+  src/site/.../wwwroot/favicon.png, img/icon.png the website's icons (64 and 256 px)
+  src/site/.../wwwroot/img/logo-120.png          the logo Google's sign-in branding asks for
 
-Usage: python helper/installer/make_art.py
+Usage: python src/companion/installer/make_art.py
 """
 
 from pathlib import Path

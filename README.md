@@ -29,6 +29,11 @@ It shows:
 - each linked account, with its own **Sync** and **Unlink**;
 - the app's actions.
 
+More options expands within the screen's working area. When space is short,
+the actions scroll and Quit remains visible. Sync notifications default to
+silent; the panel lets you choose attention-only or all sync results. The
+website still shows confirmations and keeps recent results in your account.
+
 The panel is built with [Avalonia](https://avaloniaui.net), which is open
 source and draws native windows; it doesn't embed a browser. Only Avalonia's
 Windows backend is included.

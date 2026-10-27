@@ -44,6 +44,13 @@ jobs:
           if (-not $run.WaitForExit(60000)) { $run.Kill(); throw "The start-up check didn't finish within a minute." }
           if ($run.ExitCode -ne 0) { throw "The start-up check failed (exit $($run.ExitCode))." }
 
+      - name: Expanded panel and scrolling check
+        shell: pwsh
+        run: |
+          $run = Start-Process out/StarDadCompanion.exe -ArgumentList "--check-panel-layout" -WindowStyle Hidden -PassThru
+          if (-not $run.WaitForExit(60000)) { $run.Kill(); throw "The panel layout check didn't finish within a minute." }
+          if ($run.ExitCode -ne 0) { throw "The panel layout check failed (exit $($run.ExitCode))." }
+
       - name: Build the installer
         shell: pwsh
         run: |

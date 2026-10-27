@@ -286,21 +286,22 @@ internal sealed class TrayApp : IPanelActions
         _needsAccess = report.NeedsPermission;
         ApplyAutoStart(); // the sync brought this PC's schedule along
         Finish(SyncEngine.Succeeded(report), report.Message);
-        if (report.Installed) Balloon("Your StarDad file is installed", report.Message);
+        var notify = SyncNotifications.ShouldNotify(_store.Load().SyncNotifications, report);
+        if (report.Installed && notify) Balloon("Your StarDad file is installed", report.Message);
         else if (report.WaitingForGame)
         {
-            Balloon("StarDad Companion", "Your file goes in as soon as you close the game.");
+            if (notify) Balloon("StarDad Companion", "Your file goes in as soon as you close the game.");
             _ = FinishAfterGameClosesAsync(account);
         }
         else if (report.UnknownFile) Ask(() => ReplaceUnknown(account));
         else if (report.NotLinked && account is not null && manual) Ask(() => { if (Link(account)) Post(() => _ = SyncAsync(account, manual: true)); });
         else if (report.NeedsPermission && manual) Ask(AllowAccess);
-        else if (report.NeedsPermission && !_toldAccess)
+        else if (report.NeedsPermission && !_toldAccess && notify)
         {
             _toldAccess = true;
             Balloon("StarDad Companion needs your permission", "Right-click its icon and choose \"Allow access to the game folder\".", warning: true);
         }
-        else if (manual)
+        else if (notify)
         {
             var sent = report.NewBlueprints + report.NewCompleted > 0
                 ? $" Added {report.NewBlueprints} blueprints and {report.NewCompleted} finished contracts to your account."
@@ -521,7 +522,7 @@ internal sealed class TrayApp : IPanelActions
         var accounts = state.Accounts.OrderBy(a => a.Value.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(a => (a.Key, a.Value.Name, a.Value.Schedule is { IsOn: true } schedule ? "Auto: " + schedule.Describe() : (string?)null)).ToList();
         return new PanelView(_status, _look, _share, _lastSync, accounts, GameFolder.IsLive(state.GameFolder),
-            state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy, _release?.Version.ToString(3));
+            state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy, _release?.Version.ToString(3), state.SyncNotifications);
     }
 
     private unsafe void ShowPanel()
@@ -540,6 +541,13 @@ internal sealed class TrayApp : IPanelActions
 
     // What the panel's buttons do.
     void IPanelActions.Sync(string account) => _ = SyncAsync(account, manual: true);
+    void IPanelActions.CycleSyncNotifications()
+    {
+        var state = _store.Load();
+        state.SyncNotifications = state.SyncNotifications switch { "silent" => "attention", "attention" => "all", _ => "silent" };
+        _store.Save(state);
+        Refresh();
+    }
     void IPanelActions.Unlink(string account) => Ask(() => UnlinkAccount(account));
     void IPanelActions.Link()
     {

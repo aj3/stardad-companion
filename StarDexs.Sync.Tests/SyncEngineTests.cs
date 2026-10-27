@@ -6,6 +6,56 @@ namespace StarDexs.Sync.Tests;
 
 public class SyncEngineTests
 {
+    [Fact]
+    public async Task Completion_is_retried_and_kept_until_the_website_confirms_it()
+    {
+        using var setup = new Setup();
+        setup.Site.ConfirmationFailures = 3;
+        var report = await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.True(report.Installed);
+        Assert.True(report.ConfirmationPending);
+        Assert.False(SyncEngine.Succeeded(report));
+        var pending = setup.Store.Load().Accounts[One].PendingResult;
+        Assert.NotNull(pending);
+        var completions = setup.Site.Requests.Where(r => r.Path == "/api/sync/progress" && r.Body.Contains("\"stage\":\"finished\"")).ToList();
+        Assert.Equal(3, completions.Count);
+        Assert.All(completions, r => Assert.Contains(pending.RunId, r.Body));
+        report = await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.True(SyncEngine.Succeeded(report));
+        Assert.Null(setup.Store.Load().Accounts[One].PendingResult);
+    }
+
+    [Theory]
+    [InlineData("silent", true, false)]
+    [InlineData("silent", false, false)]
+    [InlineData("attention", true, false)]
+    [InlineData("attention", false, true)]
+    [InlineData("all", true, true)]
+    [InlineData("all", false, true)]
+    public void Notification_preference_never_changes_sync_success(string mode, bool completed, bool notify)
+    {
+        var report = new SyncReport("A result", Completed: completed);
+        Assert.Equal(notify, SyncNotifications.ShouldNotify(mode, report));
+    }
+
+    [Fact]
+    public async Task Having_no_patch_is_not_a_successful_file_sync()
+    {
+        using var setup = new Setup(); setup.Site.Patch = null;
+        Assert.False(SyncEngine.Succeeded(await setup.Engine.RunAsync(One, CancellationToken.None)));
+    }
+
+    [Fact]
+    public async Task Changed_installed_file_is_not_falsely_confirmed_as_current()
+    {
+        using var setup = new Setup();
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        File.WriteAllText(GameFolder.GlobalIniPath(setup.Install.Live), "key=changed by the player\n");
+        var report = await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.True(report.UnknownFile);
+        Assert.False(SyncEngine.Succeeded(report));
+        Assert.Contains("changed by the player", File.ReadAllText(GameFolder.GlobalIniPath(setup.Install.Live)));
+    }
     private const string Blueprint = """<2026-04-02T10:11:12.345Z> [Notice] <SHUDEvent_OnNotification> Added notification "Received Blueprint: Arclight Pistol: " [12] to queue.""";
     private const string Completed = """<2026-04-02T11:00:00.000Z> [Notice] <SHUDEvent_OnNotification> Added notification "Contract Complete: Clear the Area: " [13] to queue. MissionId: [0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0]""";
     private const string One = "aaaaaaaaaaaaaaaa", Two = "bbbbbbbbbbbbbbbb";

@@ -117,8 +117,8 @@ public sealed class SyncApi(HttpClient http)
     }
 
     /// <summary>Where a sync is up to (and, at the end, how it went), for the player's account page.</summary>
-    public async Task ProgressAsync(string token, string stage, string? message, bool ok, CancellationToken cancel) =>
-        await PostAsync("api/sync/progress", new JsonObject { ["stage"] = stage, ["message"] = message, ["ok"] = ok }, token, cancel);
+    public async Task ProgressAsync(string token, string stage, string? message, bool ok, CancellationToken cancel, string? runId = null) =>
+        await PostAsync("api/sync/progress", new JsonObject { ["stage"] = stage, ["message"] = message, ["ok"] = ok, ["runId"] = runId }, token, cancel);
 
     /// <summary>Unlinks this PC on the StarDad website: its token stops working.</summary>
     public async Task UnlinkAsync(string token, CancellationToken cancel) =>

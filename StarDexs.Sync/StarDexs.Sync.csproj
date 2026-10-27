@@ -10,7 +10,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <AssemblyName>StarDexsCompanion</AssemblyName>
     <RootNamespace>StarDexs.Sync</RootNamespace>
-    <Version>0.3.7</Version>
+    <Version>0.3.8</Version>
     <Product>StarDexs Companion</Product>
     <Company>AJ Solutions, LLC</Company>
     <Description>Puts your StarDexs file in the game when you press Send to my PC.</Description>

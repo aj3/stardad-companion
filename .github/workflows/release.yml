@@ -18,9 +18,9 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
 
@@ -49,7 +49,11 @@ jobs:
         run: |
           dotnet tool install --global wix --version 5.0.2
           wix extension add -g WixToolset.UI.wixext/5.0.2
-          wix build installer/Package.wxs -ext WixToolset.UI.wixext -d Version=$env:VERSION -d Exe="$PWD/out/StarDexsCompanion.exe" -o "out/StarDexsCompanion-Setup-$env:VERSION.msi"
+          # From the installer folder: Package.wxs names its licence, pictures and icon relative to it.
+          Push-Location installer
+          wix build Package.wxs -ext WixToolset.UI.wixext -d Version=$env:VERSION -d Exe="$PWD/../out/StarDexsCompanion.exe" -o "../out/StarDexsCompanion-Setup-$env:VERSION.msi"
+          if ($LASTEXITCODE -ne 0) { throw "The installer didn't build." }
+          Pop-Location
 
       - name: Fingerprints
         shell: pwsh

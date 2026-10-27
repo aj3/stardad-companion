@@ -54,13 +54,14 @@ internal sealed class TrayPanel : Window
         _actions = actions;
         Title = "StarDexs Companion";
         Width = PanelWidth;
-        SizeToContent = SizeToContent.Height;
+        // Sized to its contents by Fit(), before it's shown: Windows' default size would leave a large empty area.
+        SizeToContent = SizeToContent.Manual;
+        WindowStartupLocation = WindowStartupLocation.Manual;
         SystemDecorations = SystemDecorations.None;
         CanResize = false;
         ShowInTaskbar = false;
         Topmost = true;
-        Background = Brushes.Transparent;
-        TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
+        Background = Palette.Brush(Palette.Background);
 
         var header = new StackPanel
         {
@@ -76,7 +77,7 @@ internal sealed class TrayPanel : Window
             Background = Palette.Brush(Palette.Background),
             BorderBrush = Palette.Brush(Palette.Border),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
+            CornerRadius = new CornerRadius(0),
             Padding = new Thickness(16, 14),
             Child = new StackPanel
             {
@@ -103,16 +104,38 @@ internal sealed class TrayPanel : Window
     /// <summary>Opens above the point the player clicked (the tray icon), inside that screen's work area.</summary>
     public void ShowNear(PixelPoint click, PanelView view)
     {
+        _anchor = click;
         Show(view);
+        Fit();
+        Place();
         Show();
         Activate();
+        // Fonts and templates settle once it's on screen: measure again so it fits exactly.
+        Fit();
+        Place();
+    }
+
+    private PixelPoint? _anchor;
+
+    /// <summary>The panel's height for its contents right now, measured before it's drawn.</summary>
+    private void Fit()
+    {
+        if (Content is not Control content) return;
+        content.Measure(new Size(PanelWidth, double.PositiveInfinity));
+        Width = PanelWidth;
+        Height = Math.Ceiling(content.DesiredSize.Height);
+    }
+
+    /// <summary>Just above the point the player clicked (the tray icon), inside that screen's work area.</summary>
+    private void Place()
+    {
+        if (_anchor is not { } click) return;
         var screen = Screens.ScreenFromPoint(click) ?? Screens.Primary;
         if (screen is null) return;
         var area = screen.WorkingArea;
-        var scale = screen.Scaling;
-        var size = new PixelSize((int)(Bounds.Width * scale), (int)(Bounds.Height * scale));
-        var x = Math.Clamp(click.X - size.Width / 2, area.X + 8, area.Right - size.Width - 8);
-        var y = Math.Clamp(click.Y - size.Height - 12, area.Y + 8, area.Bottom - size.Height - 8);
+        var size = new PixelSize((int)Math.Ceiling(Width * screen.Scaling), (int)Math.Ceiling(Height * screen.Scaling));
+        var x = Math.Clamp(click.X - size.Width / 2, area.X + 8, Math.Max(area.X + 8, area.Right - size.Width - 8));
+        var y = Math.Clamp(click.Y - size.Height - 12, area.Y + 8, Math.Max(area.Y + 8, area.Bottom - size.Height - 8));
         Position = new PixelPoint(x, y);
     }
 
@@ -121,6 +144,7 @@ internal sealed class TrayPanel : Window
     {
         _view = view;
         _bar.Show(view.Look, view.Share);
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => { Fit(); if (IsVisible) Place(); }, Avalonia.Threading.DispatcherPriority.Render);
         _status.Text = view.Status;
         _last.Text = view.LastSync ?? "";
         _last.IsVisible = view.LastSync is not null;

@@ -47,6 +47,11 @@ public sealed class FakeSite : HttpMessageHandler
     public byte[] File { get; set; } = Encoding.UTF8.GetBytes("key=Value\n");
     public bool Unlinked { get; set; }
     public byte[]? Previous { get; set; }
+    /// <summary>What the account holds, like the real site: each blueprint and contract once.</summary>
+    public HashSet<string> Owned { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> Completed { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>The "schedule" JSON the status call returns (null: none).</summary>
+    public string Schedule { get; set; } = "null";
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
     {
@@ -56,7 +61,9 @@ public sealed class FakeSite : HttpMessageHandler
         if (Unlinked && path.StartsWith("/api/sync/", StringComparison.Ordinal) && !path.Contains("/link/")) return new(HttpStatusCode.Unauthorized);
         return path switch
         {
-            "/api/sync/status" => Json($$"""{"patch":{{(Patch is null ? "null" : $"\"{Patch}\"")}},"settings":"{{Settings}}","has_settings":true,"account":"aaaaaaaaaaaaaaaa","helper_latest":"0.2.0"}"""),
+            "/api/sync/status" => Json($$"""{"patch":{{(Patch is null ? "null" : $"\"{Patch}\"")}},"settings":"{{Settings}}","has_settings":true,"account":"aaaaaaaaaaaaaaaa","helper_latest":"0.2.0","schedule":{{Schedule}}}"""),
+            "/api/sync/blueprints" => Json($$"""{"added":{{Keep(Owned, System.Text.Json.Nodes.JsonNode.Parse(body)!["owned"]!.AsArray().Select(b => b!["name"]!.GetValue<string>()))}}}"""),
+            "/api/sync/completed" => Json($$"""{"added":{{Keep(Completed, System.Text.Json.Nodes.JsonNode.Parse(body)!["completed"]!.AsObject().Select(c => c.Key))}}}"""),
             "/api/sync/file/previous" => Previous is null ? new HttpResponseMessage(HttpStatusCode.NotFound) : FileResponse(Previous, "4.10.1-live.1"),
             "/api/sync/file" => FileResponse(File, Patch!),
             "/api/sync/link/start" => Json("""{"code":"ABCD-1234","poll":"p1","link":"/link?code=ABCD-1234"}"""),
@@ -64,6 +71,8 @@ public sealed class FakeSite : HttpMessageHandler
             _ => Json("{}"),
         };
     }
+
+    private static int Keep(HashSet<string> into, IEnumerable<string> items) => items.Count(into.Add);
 
     private HttpResponseMessage FileResponse(byte[] content, string patch)
     {

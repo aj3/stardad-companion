@@ -20,7 +20,7 @@ public static class SyncStages
 /// <summary>
 /// One sync for one linked account: read what's new in the logs and send it, then check whether that
 /// account's file is current and install it if the player agreed. Nothing here runs on its own; the app
-/// calls it only when the player asks (from stardexs.com or the tray menu).
+/// calls it when the player asks (from stardexs.com or the tray menu) or at the times they chose on stardexs.com.
 /// </summary>
 public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writer)
 {
@@ -57,9 +57,10 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         try
         {
             await Stage(SyncStage.Reading);
-            var (blueprints, completed) = await SendLogsAsync(state, account!, token, () => Stage(SyncStage.Sending), cancel);
+            var (blueprints, completed) = await SendLogsAsync(state, token, () => Stage(SyncStage.Sending), cancel);
             await Stage(SyncStage.Checking);
             var status = await api.StatusAsync(token, cancel);
+            TakeSchedule(state.Accounts[account!], status.Schedule);
             SyncReport Report(string message, bool installed = false, bool permission = false, bool waiting = false, bool unknown = false) =>
                 new(message, installed, permission, false, waiting, unknown, blueprints, completed, status.HelperLatest);
 
@@ -163,28 +164,91 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         state.ReplaceUnknownOnce = false;
     }
 
-    /// <summary>The logs' new lines, sent; offsets move on only once stardexs.com has them.</summary>
-    private async Task<(int Blueprints, int Completed)> SendLogsAsync(SyncState state, string account, string token, Func<Task> sending, CancellationToken cancel)
+    /// <summary>
+    /// Everything the logs hold, sent every time (stardexs.com keeps each once), so anything removed from the
+    /// account comes back. Only logs that are new or changed since the last sync are read again.
+    /// Returns how many the account didn't have yet.
+    /// </summary>
+    private async Task<(int Blueprints, int Completed)> SendLogsAsync(SyncState state, string token, Func<Task> sending, CancellationToken cancel)
     {
-        var linked = state.Accounts[account];
         var findings = new LogFindings();
-        var offsets = new Dictionary<string, long>(linked.LogOffsets, StringComparer.OrdinalIgnoreCase);
+        var logs = new Dictionary<string, LogFile>(StringComparer.OrdinalIgnoreCase);
         foreach (var log in Logs(state.GameFolder!))
         {
-            var name = Path.GetFileName(log);
-            try { offsets[name] = LogReader.ReadFrom(log, offsets.GetValueOrDefault(name), findings); }
+            var file = new FileInfo(log);
+            try
+            {
+                if (!state.Logs.TryGetValue(file.Name, out var known) || !known.Matches(file))
+                {
+                    var found = new LogFindings();
+                    LogReader.ReadFrom(log, 0, found);
+                    file.Refresh();
+                    known = LogFile.From(file, found);
+                }
+                logs[file.Name] = known;
+                known.AddTo(findings);
+            }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
-        if (!findings.IsEmpty) await sending();
-        if (findings.Blueprints.Count > 0)
-            await api.SendBlueprintsAsync(token, findings.Blueprints.Values.Take(MaxBlueprintsPerSend), cancel);
-        if (findings.Completed.Count > 0)
-            foreach (var chunk in findings.Completed.Chunk(MaxCompletedPerSend))
-                await api.SendCompletedAsync(token, chunk.ToDictionary(c => c.Key, c => c.Value), cancel);
-        linked.LogOffsets = offsets;
-        return (findings.Blueprints.Count, findings.Completed.Count);
+        state.Logs = logs;
+        if (findings.IsEmpty) return (0, 0);
+        await sending();
+        var blueprints = findings.Blueprints.Count == 0 ? 0
+            : await api.SendBlueprintsAsync(token, findings.Blueprints.Values.OrderBy(b => b.FirstSeen).Take(MaxBlueprintsPerSend), cancel);
+        var completed = 0;
+        foreach (var chunk in findings.Completed.Chunk(MaxCompletedPerSend))
+            completed += await api.SendCompletedAsync(token, chunk.ToDictionary(c => c.Key, c => c.Value), cancel);
+        return (blueprints, completed);
     }
+
+    /// <summary>Keeps the schedule the player chose on stardexs.com; a new one counts from now.</summary>
+    private static void TakeSchedule(LinkedAccount linked, SyncSchedule? schedule)
+    {
+        if (linked.Schedule == schedule) return;
+        linked.Schedule = schedule;
+        linked.ScheduleSince = schedule is null ? null : DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Asks stardexs.com only for the schedule the player chose for this PC (after they saved it there); nothing
+    /// is read or installed. Returns the schedule, or a message when it couldn't be asked.
+    /// </summary>
+    public async Task<(SyncSchedule? Schedule, string? Problem)> RefreshScheduleAsync(string? account, CancellationToken cancel)
+    {
+        var state = store.Load();
+        account ??= state.LastAccount;
+        if (store.Token(state, account) is not { } token) return (null, "This PC isn't linked to that stardexs.com account yet.");
+        try
+        {
+            var status = await api.StatusAsync(token, cancel);
+            TakeSchedule(state.Accounts[account!], status.Schedule);
+            store.Save(state);
+            return (status.Schedule, null);
+        }
+        catch (NotLinkedException) { return (null, "This PC was unlinked from that account."); }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            return (null, "Couldn't reach stardexs.com. Try again in a moment.");
+        }
+    }
+
+    /// <summary>Linked accounts whose timed sync is due now, by the schedule each player chose.</summary>
+    public IReadOnlyList<string> DueAccounts(DateTimeOffset now)
+    {
+        var due = new List<string>();
+        foreach (var (id, linked) in store.Load().Accounts)
+        {
+            if (linked.Schedule is not { } schedule || linked.ScheduleSince is not { } since) continue;
+            var from = linked.LastSync is { } last && last > since ? last : since;
+            if (schedule.IsDue(from, now)) due.Add(id);
+        }
+        return due;
+    }
+
+    /// <summary>Linked accounts that asked to sync when the game updates.</summary>
+    public IReadOnlyList<string> OnGameUpdateAccounts() =>
+        store.Load().Accounts.Where(a => a.Value.Schedule is { OnGameUpdate: true }).Select(a => a.Key).ToList();
 
     /// <summary>Game.log and every log in logbackups; nothing else (see <see cref="GameFolder.IsReadableLog"/>).</summary>
     public static IEnumerable<string> Logs(string live)
@@ -226,6 +290,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     private SyncReport Done(SyncState state, SyncReport report)
     {
         state.LastSync = DateTimeOffset.UtcNow;
+        if (state.LastAccount is { } account && state.Accounts.TryGetValue(account, out var linked)) linked.LastSync = state.LastSync;
         state.LastMessage = report.Message;
         store.Save(state);
         return report;

@@ -4,21 +4,25 @@ using Microsoft.Win32;
 namespace StarDexs.Sync;
 
 /// <summary>
-/// The <c>stardexs-sync:</c> link behind stardexs.com's "Send to my PC" button. Registered for the current
-/// player only. The only part read is an optional account id (16 hex characters) that picks which account
-/// already linked on this PC to sync; anything else is ignored. Any page can open the link, so all it can
-/// ever do is start the same sync with stardexs.com that the tray menu's "Sync now" does.
+/// The <c>stardexs-sync:</c> link behind stardexs.com's "Send to my PC" button (<c>sync/</c>) and its
+/// "Save schedule" button (<c>schedule/</c>). Registered for the current player only. The only part read is
+/// an optional account id (16 hex characters) that picks which account already linked on this PC; anything
+/// else is ignored. Any page can open the link, so all it can ever do is start the same sync with stardexs.com
+/// that the tray menu's "Sync" does, or ask stardexs.com for the schedule the player saved there.
 /// </summary>
 internal static partial class SyncLink
 {
     public const string Scheme = "stardexs-sync";
     private const string Key = @"Software\Classes\" + Scheme;
 
-    [GeneratedRegex(@"^stardexs-sync://sync/(?<account>[0-9a-f]{16})/?$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^stardexs-sync://(?:sync|schedule)/(?<account>[0-9a-f]{16})/?$", RegexOptions.CultureInvariant)]
     private static partial Regex WithAccount();
 
+    public static bool IsScheduleRequest(string[] args) =>
+        args.Any(arg => arg.StartsWith(Scheme + "://schedule/", StringComparison.OrdinalIgnoreCase));
+
     public static bool IsSyncRequest(string[] args) =>
-        args.Any(arg => arg == "--sync" || arg.StartsWith(Scheme + ":", StringComparison.OrdinalIgnoreCase));
+        !IsScheduleRequest(args) && args.Any(arg => arg == "--sync" || arg.StartsWith(Scheme + ":", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The account id in the link, or null (then the last account used).</summary>
     public static string? Account(string[] args) =>

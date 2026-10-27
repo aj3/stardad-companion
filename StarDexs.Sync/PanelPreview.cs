@@ -25,7 +25,7 @@ internal static class PanelPreview
 
     public static void Save(string path)
     {
-        (string Id, string Name)[] accounts = [("a", "AJ (main)"), ("b", "Alt account")];
+        (string Id, string Name, string? Schedule)[] accounts = [("a", "AJ (main)", "Auto: Every day at 6:00 PM"), ("b", "Alt account", null)];
         PanelView[] views =
         [
             new("Downloading your file…", SyncBar.Look.Running, 0.6, null, accounts, true, true, false, true, true),

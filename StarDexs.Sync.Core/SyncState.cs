@@ -34,15 +34,48 @@ public sealed class LinkedAccount
     public string ProtectedToken { get; set; } = "";
     /// <summary>The account's name as stardexs.com shows it, for the menu.</summary>
     public string Name { get; set; } = "";
-    /// <summary>How far each log has been read for this account, by file name.</summary>
-    public Dictionary<string, long> LogOffsets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>The automatic syncs the player chose for this PC on stardexs.com; null: none.</summary>
+    public SyncSchedule? Schedule { get; set; }
+    /// <summary>When that schedule arrived; the first timed sync comes after it.</summary>
+    public DateTimeOffset? ScheduleSince { get; set; }
+    /// <summary>This account's last sync, whoever started it; timed syncs count from it.</summary>
+    public DateTimeOffset? LastSync { get; set; }
+}
+
+/// <summary>
+/// What one log held, kept so a log is read once: the next sync reads it again only if its size or time
+/// changed. Every sync still sends everything found, so the account gets back anything removed there.
+/// </summary>
+public sealed class LogFile
+{
+    public long Size { get; set; }
+    public DateTime Written { get; set; }
+    public List<Blueprint> Blueprints { get; set; } = [];
+    public Dictionary<string, string> Completed { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public static LogFile From(FileInfo file, LogFindings found) => new()
+    {
+        Size = file.Length, Written = file.LastWriteTimeUtc,
+        Blueprints = [.. found.Blueprints.Values], Completed = new(found.Completed, StringComparer.OrdinalIgnoreCase),
+    };
+
+    public bool Matches(FileInfo file) => Size == file.Length && Written == file.LastWriteTimeUtc;
+
+    public void AddTo(LogFindings findings)
+    {
+        foreach (var blueprint in Blueprints) findings.AddBlueprint(blueprint);
+        foreach (var (id, title) in Completed) findings.Completed[id] = title;
+    }
 }
 
 /// <summary>Where the helper is up to: who it's linked to, what it read and installed, what the player agreed to.</summary>
 public sealed class SyncState
 {
-    /// <summary>2 since accounts became a list. Nothing earlier was released, so an older file just starts fresh.</summary>
-    public const int CurrentVersion = 2;
+    /// <summary>
+    /// 3 since logs are kept as what they held (not how far they were read). A version 2 file carries over:
+    /// its read positions are dropped and every log is read once more. Anything older starts fresh.
+    /// </summary>
+    public const int CurrentVersion = 3;
     public int Version { get; set; } = CurrentVersion;
     /// <summary>Linked accounts by their public id (not secret: it only picks which token to use).</summary>
     public Dictionary<string, LinkedAccount> Accounts { get; set; } = new(StringComparer.Ordinal);
@@ -62,6 +95,8 @@ public sealed class SyncState
     public string? NoticedBuild { get; set; }
     public DateTimeOffset? LastSync { get; set; }
     public string? LastMessage { get; set; }
+    /// <summary>What each log in the game folder held, by file name.</summary>
+    public Dictionary<string, LogFile> Logs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>Reads and writes <see cref="SyncState"/> as JSON in the app's own folder; a damaged or older file starts fresh.</summary>
@@ -73,11 +108,12 @@ public sealed class StateStore(string folder, ISecretProtector protector)
     {
         try
         {
-            if (File.Exists(Path) && JsonSerializer.Deserialize(File.ReadAllText(Path), StateJson.Default.SyncState) is { Version: SyncState.CurrentVersion } state)
+            if (File.Exists(Path) && JsonSerializer.Deserialize(File.ReadAllText(Path), StateJson.Default.SyncState) is { Version: 2 or SyncState.CurrentVersion } state)
             {
+                state.Version = SyncState.CurrentVersion;
                 state.Accounts = new Dictionary<string, LinkedAccount>(state.Accounts, StringComparer.Ordinal);
-                foreach (var account in state.Accounts.Values)
-                    account.LogOffsets = new Dictionary<string, long>(account.LogOffsets, StringComparer.OrdinalIgnoreCase);
+                state.Logs = new Dictionary<string, LogFile>(state.Logs, StringComparer.OrdinalIgnoreCase);
+                foreach (var log in state.Logs.Values) log.Completed = new Dictionary<string, string>(log.Completed, StringComparer.OrdinalIgnoreCase);
                 return state;
             }
         }

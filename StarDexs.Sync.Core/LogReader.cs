@@ -20,7 +20,7 @@ public sealed class LogFindings
         foreach (var (id, title) in other.Completed) Completed[id] = title;
     }
 
-    internal void AddBlueprint(Blueprint found)
+    public void AddBlueprint(Blueprint found)
     {
         if (!Blueprints.TryGetValue(found.Name, out var known) || found.FirstSeen < known.FirstSeen) Blueprints[found.Name] = found;
     }

@@ -10,17 +10,18 @@ public sealed record LinkStart(string Code, string Poll, Uri LinkPage);
 public sealed record LinkReady(string Token, string Account, string Name);
 /// <param name="Account">Which account the token belongs to (its public id).</param>
 /// <param name="HelperLatest">The newest StarDexs Companion version on stardexs.com, so the app can mention an update.</param>
-public sealed record SyncStatus(string? Patch, string Settings, bool HasSettings, string? Account = null, string? HelperLatest = null);
+public sealed record SyncStatus(string? Patch, string Settings, bool HasSettings, string? Account = null, string? HelperLatest = null, SyncSchedule? Schedule = null);
 public sealed record SyncFile(byte[] Data, string Patch, string Settings);
 
 /// <summary>The account says this PC isn't linked any more (unlinked on the website, or the token is gone).</summary>
 public sealed class NotLinkedException : Exception;
 
 /// <summary>
-/// The only network traffic StarDexs Companion makes, all to stardexs.com and only when the player asks:
-/// linking, asking whether the player's file is current, downloading it (or the previous one), and sending
-/// blueprint names, completed contract titles and the installed file's hash. Nothing else about the PC,
-/// the game or the player is sent.
+/// The only network traffic StarDexs Companion makes, all to stardexs.com, only when the player asks or at times
+/// they chose:
+/// linking, asking whether the player's file is current (and which automatic syncs they chose), downloading it
+/// (or the previous one), and sending blueprint names, completed contract titles and the installed file's hash.
+/// Nothing else about the PC, the game or the player is sent.
 /// </summary>
 public sealed class SyncApi(HttpClient http)
 {
@@ -56,7 +57,20 @@ public sealed class SyncApi(HttpClient http)
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/sync/status");
         var body = await SendJsonAsync(request, token, cancel);
         return new SyncStatus(body?["patch"]?.GetValue<string>(), Text(body, "settings"), body?["has_settings"]?.GetValue<bool>() == true,
-            body?["account"]?.GetValue<string>(), body?["helper_latest"]?.GetValue<string>());
+            body?["account"]?.GetValue<string>(), body?["helper_latest"]?.GetValue<string>(), Schedule(body?["schedule"]));
+    }
+
+    /// <summary>The automatic syncs the player chose for this PC; null when off or not understood.</summary>
+    private static SyncSchedule? Schedule(JsonNode? node)
+    {
+        if (node is not JsonObject schedule) return null;
+        try
+        {
+            var found = SyncSchedule.From(schedule["every_hours"]?.GetValue<int>() ?? 0, schedule["at_minute"]?.GetValue<int?>(),
+                schedule["on_game_update"]?.GetValue<bool>() == true);
+            return found is { IsOn: true } ? found : null;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or FormatException) { return null; }
     }
 
     /// <summary>The file installed before the current one, kept on stardexs.com; null when there isn't one.</summary>
@@ -82,16 +96,24 @@ public sealed class SyncApi(HttpClient http)
         return new SyncFile(await response.Content.ReadAsByteArrayAsync(cancel), patch, settings);
     }
 
-    public async Task SendBlueprintsAsync(string token, IEnumerable<Blueprint> blueprints, CancellationToken cancel)
+    /// <summary>Sends blueprints; returns how many the account didn't have yet.</summary>
+    public async Task<int> SendBlueprintsAsync(string token, IEnumerable<Blueprint> blueprints, CancellationToken cancel)
     {
         var owned = new JsonArray(blueprints.Select(b => (JsonNode)new JsonObject { ["name"] = b.Name, ["first_seen"] = b.FirstSeen.ToString("yyyy-MM-ddTHH:mm:ssZ") }).ToArray());
-        await PostAsync("api/sync/blueprints", new JsonObject { ["owned"] = owned }, token, cancel);
+        return Added(await PostAsync("api/sync/blueprints", new JsonObject { ["owned"] = owned }, token, cancel));
     }
 
-    public async Task SendCompletedAsync(string token, IReadOnlyDictionary<string, string> completed, CancellationToken cancel)
+    /// <summary>Sends finished contracts; returns how many the account didn't have yet.</summary>
+    public async Task<int> SendCompletedAsync(string token, IReadOnlyDictionary<string, string> completed, CancellationToken cancel)
     {
         var map = new JsonObject(completed.Select(c => KeyValuePair.Create(c.Key, (JsonNode?)c.Value)));
-        await PostAsync("api/sync/completed", new JsonObject { ["completed"] = map }, token, cancel);
+        return Added(await PostAsync("api/sync/completed", new JsonObject { ["completed"] = map }, token, cancel));
+    }
+
+    private static int Added(JsonNode? body)
+    {
+        try { return body?["added"]?.GetValue<int>() ?? 0; }
+        catch (Exception exception) when (exception is InvalidOperationException or FormatException) { return 0; }
     }
 
     /// <summary>Where a sync is up to (and, at the end, how it went), for the player's account page.</summary>

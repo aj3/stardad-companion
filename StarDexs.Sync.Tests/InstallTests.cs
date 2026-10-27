@@ -191,6 +191,26 @@ public class InstallWriterTests
 public class StateStoreTests
 {
     [Fact]
+    public void A_version_2_file_keeps_its_links_and_drops_its_read_positions()
+    {
+        using var install = new FakeInstall();
+        var store = new StateStore(install.Data, new FakeProtector());
+        Directory.CreateDirectory(install.Data);
+        File.WriteAllText(store.Path, """
+            {"Version":2,"Accounts":{"aaaaaaaaaaaaaaaa":{"ProtectedToken":"p:dC0xMjM=","Name":"Pilot One","LogOffsets":{"Game.log":99}}},
+             "LastAccount":"aaaaaaaaaaaaaaaa","GameFolder":"C:\\Games\\LIVE","InstallAgreed":true}
+            """);
+
+        var loaded = store.Load();
+        Assert.Equal(SyncState.CurrentVersion, loaded.Version);
+        Assert.Equal("t-123", store.Token(loaded, "aaaaaaaaaaaaaaaa"));
+        Assert.True(loaded.InstallAgreed);
+        Assert.Empty(loaded.Logs);
+        store.Save(loaded);
+        Assert.DoesNotContain("LogOffsets", File.ReadAllText(store.Path));
+    }
+
+    [Fact]
     public void Keeps_each_accounts_token_protected_and_survives_a_round_trip()
     {
         using var install = new FakeInstall();
@@ -198,7 +218,8 @@ public class StateStoreTests
         var state = store.Load();
         store.Link(state, "aaaaaaaaaaaaaaaa", "Pilot One", "token-one");
         store.Link(state, "bbbbbbbbbbbbbbbb", "Pilot Two", "token-two");
-        state.Accounts["aaaaaaaaaaaaaaaa"].LogOffsets["Game.log"] = 42;
+        state.Logs["Game.log"] = new LogFile { Size = 42, Completed = { ["ABC"] = "Title" } };
+        state.Accounts["aaaaaaaaaaaaaaaa"].Schedule = new SyncSchedule(24, 18 * 60, true);
         store.Save(state);
 
         Assert.DoesNotContain("token-one", File.ReadAllText(store.Path));
@@ -206,7 +227,9 @@ public class StateStoreTests
         Assert.Equal("token-one", store.Token(loaded, "aaaaaaaaaaaaaaaa"));
         Assert.Equal("token-two", store.Token(loaded, "bbbbbbbbbbbbbbbb"));
         Assert.Equal("bbbbbbbbbbbbbbbb", loaded.LastAccount);
-        Assert.Equal(42, loaded.Accounts["aaaaaaaaaaaaaaaa"].LogOffsets["game.LOG"]);
+        Assert.Equal(42, loaded.Logs["game.LOG"].Size);
+        Assert.Equal("Title", loaded.Logs["Game.log"].Completed["abc"]);
+        Assert.Equal(new SyncSchedule(24, 18 * 60, true), loaded.Accounts["aaaaaaaaaaaaaaaa"].Schedule);
 
         store.Unlink(loaded, "bbbbbbbbbbbbbbbb");
         Assert.Null(store.Token(loaded, "bbbbbbbbbbbbbbbb"));

@@ -7,6 +7,7 @@ namespace StarDexs.Sync.Tests;
 public class SyncEngineTests
 {
     private const string Blueprint = """<2026-04-02T10:11:12.345Z> [Notice] <SHUDEvent_OnNotification> Added notification "Received Blueprint: Arclight Pistol: " [12] to queue.""";
+    private const string Completed = """<2026-04-02T11:00:00.000Z> [Notice] <SHUDEvent_OnNotification> Added notification "Contract Complete: Clear the Area: " [13] to queue. MissionId: [0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0]""";
     private const string One = "aaaaaaaaaaaaaaaa", Two = "bbbbbbbbbbbbbbbb";
 
     private sealed class Setup : IDisposable
@@ -35,7 +36,7 @@ public class SyncEngineTests
     }
 
     [Fact]
-    public async Task Sends_new_log_findings_once_and_installs_the_file()
+    public async Task Sends_log_findings_and_installs_the_file()
     {
         using var setup = new Setup();
         setup.Install.Log("Game.log", Blueprint + "\n");
@@ -54,7 +55,83 @@ public class SyncEngineTests
         report = await setup.Engine.RunAsync(null, CancellationToken.None); // "Sync" from the tray: the last account
         Assert.False(report.Installed);
         Assert.Equal(0, report.NewBlueprints);
-        Assert.DoesNotContain(setup.Site.Requests, r => r.Path is "/api/sync/blueprints" or "/api/sync/file");
+        Assert.DoesNotContain(setup.Site.Requests, r => r.Path == "/api/sync/file");
+    }
+
+    [Fact]
+    public async Task Every_sync_sends_everything_so_what_was_removed_on_the_website_comes_back()
+    {
+        using var setup = new Setup();
+        setup.Install.Log("logbackups/Game Build(1) 01.log", Blueprint + "\n" + Completed + "\n");
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Single(setup.Site.Owned);
+
+        setup.Site.Owned.Clear(); // the player pressed Forget on stardexs.com
+        setup.Site.Completed.Clear();
+        var report = await setup.Engine.RunAsync(One, CancellationToken.None);
+
+        Assert.Equal(1, report.NewBlueprints);
+        Assert.Equal(1, report.NewCompleted);
+        Assert.Contains("Arclight Pistol", setup.Site.Owned);
+    }
+
+    [Fact]
+    public async Task A_log_is_read_again_only_when_it_changes()
+    {
+        using var setup = new Setup();
+        setup.Install.Log("logbackups/old.log", Blueprint + "\n");
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        var kept = setup.Store.Load().Logs["old.log"];
+        Assert.Single(kept.Blueprints);
+
+        // Same size and time: what was kept is used, not the file (proved by changing the kept copy).
+        var state = setup.Store.Load();
+        state.Logs["old.log"].Blueprints[0] = new Blueprint("Kept Copy", kept.Blueprints[0].FirstSeen);
+        setup.Store.Save(state);
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Contains("Kept Copy", setup.Site.Owned);
+
+        // A changed log is read again; a deleted one is forgotten.
+        setup.Install.Log("logbackups/old.log", Blueprint + "\n" + Blueprint.Replace("Arclight Pistol", "Karna Rifle") + "\n");
+        File.SetLastWriteTimeUtc(Path.Combine(setup.Install.Live, "logbackups", "old.log"), DateTime.UtcNow.AddMinutes(1));
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Contains("Karna Rifle", setup.Site.Owned);
+        File.Delete(Path.Combine(setup.Install.Live, "logbackups", "old.log"));
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Empty(setup.Store.Load().Logs);
+    }
+
+    [Fact]
+    public async Task Takes_the_schedule_the_player_chose_and_runs_it_only_when_due()
+    {
+        using var setup = new Setup();
+        Assert.Empty(setup.Engine.DueAccounts(DateTimeOffset.UtcNow.AddDays(30))); // nothing chosen: never on its own
+
+        setup.Site.Schedule = """{"every_hours":6,"at_minute":null,"on_game_update":true}""";
+        var (schedule, problem) = await setup.Engine.RefreshScheduleAsync(One, CancellationToken.None);
+        Assert.Null(problem);
+        Assert.Equal(new SyncSchedule(6, null, true), schedule);
+        Assert.DoesNotContain(setup.Site.Requests, r => r.Path is "/api/sync/file" or "/api/sync/blueprints"); // only asked
+        Assert.Equal([One], setup.Engine.OnGameUpdateAccounts());
+
+        Assert.Empty(setup.Engine.DueAccounts(DateTimeOffset.UtcNow.AddHours(5)));
+        Assert.Equal([One], setup.Engine.DueAccounts(DateTimeOffset.UtcNow.AddHours(6.1)));
+        await setup.Engine.RunAsync(One, CancellationToken.None); // a sync counts as the timed one
+        Assert.Empty(setup.Engine.DueAccounts(DateTimeOffset.UtcNow.AddHours(5)));
+
+        setup.Site.Schedule = "null"; // turned off on the website: the next contact takes it away
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Null(setup.Store.Load().Accounts[One].Schedule);
+        Assert.Empty(setup.Engine.DueAccounts(DateTimeOffset.UtcNow.AddDays(30)));
+    }
+
+    [Fact]
+    public async Task A_schedule_the_app_doesnt_know_is_treated_as_off()
+    {
+        using var setup = new Setup();
+        setup.Site.Schedule = """{"every_hours":1,"at_minute":null,"on_game_update":false}""";
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Null(setup.Store.Load().Accounts[One].Schedule);
     }
 
     [Fact]
@@ -121,7 +198,7 @@ public class SyncEngineTests
     }
 
     [Fact]
-    public async Task Each_linked_account_gets_the_logs_once_and_its_own_file()
+    public async Task Each_linked_account_gets_the_logs_and_its_own_file()
     {
         using var setup = new Setup();
         var state = setup.Store.Load();
@@ -129,8 +206,10 @@ public class SyncEngineTests
         setup.Store.Save(state);
         setup.Install.Log("Game.log", Blueprint + "\n");
 
-        Assert.Equal(1, (await setup.Engine.RunAsync(One, CancellationToken.None)).NewBlueprints);
-        Assert.Equal(1, (await setup.Engine.RunAsync(Two, CancellationToken.None)).NewBlueprints);
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        await setup.Engine.RunAsync(Two, CancellationToken.None);
+        Assert.Contains(setup.Site.Requests, r => r.Path == "/api/sync/blueprints" && r.Auth == "t-123");
+        Assert.Contains(setup.Site.Requests, r => r.Path == "/api/sync/blueprints" && r.Auth == "t-456");
         // Switching accounts puts the other account's file in, even on the same patch.
         Assert.Contains(setup.Site.Requests, r => r.Path == "/api/sync/file" && r.Auth == "t-456");
         Assert.Equal(Two, setup.Store.Load().InstalledAccount);
@@ -225,12 +304,11 @@ public class SyncEngineTests
     }
 
     [Fact]
-    public async Task Keeps_log_positions_when_stardexs_com_is_out_of_reach()
+    public async Task Sends_everything_once_stardexs_com_is_back_in_reach()
     {
         using var setup = new Setup();
         setup.Install.Log("Game.log", Blueprint + "\n");
         await setup.EngineFor(new Unreachable()).RunAsync(One, CancellationToken.None);
-        Assert.Empty(setup.Store.Load().Accounts[One].LogOffsets);
 
         Assert.Equal(1, (await setup.Engine.RunAsync(One, CancellationToken.None)).NewBlueprints);
     }

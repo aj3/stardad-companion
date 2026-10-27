@@ -35,7 +35,15 @@ internal static class Program
             return 0;
         }
 
+        // Run by the uninstaller: stop starting with Windows.
+        if (args is [AutoStart.Forget])
+        {
+            AutoStart.Set(false);
+            return 0;
+        }
+
         var syncNow = SyncLink.IsSyncRequest(args);
+        var schedule = SyncLink.IsScheduleRequest(args);
         var account = SyncLink.Account(args);
         // Started by an update: the old copy is closing, so wait for it (a few seconds at most), then tidy up after it.
         var updated = args.Contains("--updated");
@@ -46,13 +54,15 @@ internal static class Program
         if (updated && Environment.ProcessPath is { } self) Updater.TidyUp(self);
         if (!first)
         {
-            // Already running: pass a "Send to my PC" press on to it.
+            // Already running: pass a "Send to my PC" or "Save schedule" press on to it.
             if (syncNow) TrayApp.AskRunningCopyToSync(account);
+            else if (schedule) TrayApp.AskRunningCopyForSchedule(account);
+            else if (args.Contains(AutoStart.Background)) { }
             else Dialogs.Tell("StarDexs Companion is already running. Look for its icon by the clock.");
             return 0;
         }
         // Avalonia runs the message loop (for the tray icon too) until Quit; only its Windows backend is used.
-        var tray = new TrayApp(syncNow, account);
+        var tray = new TrayApp(syncNow, account, schedule, args.Contains(AutoStart.Background));
         return AppBuilder.Configure(() => new CompanionApp(tray))
             .UseWin32()
             .UseSkia()

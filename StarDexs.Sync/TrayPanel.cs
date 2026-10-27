@@ -9,7 +9,7 @@ namespace StarDexs.Sync;
 /// <summary>What the panel shows; the tray app builds one each time it opens or something changes.</summary>
 internal sealed record PanelView(
     string Status, SyncBar.Look Look, double Share, string? LastSync,
-    IReadOnlyList<(string Id, string Name)> Accounts, bool HasFolder, bool InstallAgreed, bool NeedsAccess, bool HasInstalled, bool Busy,
+    IReadOnlyList<(string Id, string Name, string? Schedule)> Accounts, bool HasFolder, bool InstallAgreed, bool NeedsAccess, bool HasInstalled, bool Busy,
     string? UpdateTo = null);
 
 /// <summary>What the panel's buttons do; the tray app does it.</summary>
@@ -151,14 +151,20 @@ internal sealed class TrayPanel : Window
 
         _accounts.Children.Clear();
         if (view.Accounts.Count == 0) _accounts.Children.Add(Small("No account linked yet.", Palette.Soft));
-        foreach (var (id, name) in view.Accounts)
+        foreach (var (id, name, schedule) in view.Accounts)
         {
             var sync = new Button { Content = "Sync", IsEnabled = view.HasFolder && !view.Busy, Padding = new Thickness(12, 4) };
             sync.Click += (_, _) => _actions.Sync(id);
             var unlink = new Button { Content = "Unlink", IsEnabled = !view.Busy, Padding = new Thickness(10, 4), Foreground = Palette.Brush(Palette.Soft) };
             unlink.Click += (_, _) => { Hide(); _actions.Unlink(id); };
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 6 };
-            var label = new TextBlock { Text = name, Foreground = Palette.Brush(Palette.Text), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            Control label = new TextBlock { Text = name, Foreground = Palette.Brush(Palette.Text), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            if (schedule is not null)
+            {
+                var when = Small(schedule, Palette.Soft);
+                when.FontSize = 11;
+                label = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { label, when } };
+            }
             Grid.SetColumn(sync, 1);
             Grid.SetColumn(unlink, 2);
             row.Children.Add(label);

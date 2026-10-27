@@ -12,10 +12,10 @@ using static StarDexs.Sync.NativeMethods;
 namespace StarDexs.Sync;
 
 /// <summary>
-/// The tray icon and everything behind its menu. It never checks in on its own: a sync happens only when the
-/// player presses "Send to my PC" in their stardexs.com account (the stardexs-sync: link) or "Sync" in the
-/// menu, and only for an account the player linked on this PC. Watching for a game update reads
-/// build_manifest.id on this PC; nothing goes online for it.
+/// The tray icon and everything behind its menu. A sync happens when the player presses "Send to my PC" in
+/// their stardexs.com account (the stardexs-sync: link) or "Sync" in the panel, or at the times they chose
+/// for this PC in their account (off unless they turn it on), and only for an account linked on this PC.
+/// Watching for a game update reads build_manifest.id on this PC; nothing goes online for it.
 /// The tray icon is plain Win32 on the UI thread (Avalonia runs the message loop); its panel is themed like
 /// the website. Syncing runs on the thread pool, and anything that asks the player a question runs on its own
 /// short-lived thread so the icon never freezes. One lock keeps the state file to one writer at a time.
@@ -23,12 +23,12 @@ namespace StarDexs.Sync;
 internal sealed class TrayApp : IPanelActions
 {
     private const uint WM_TRAY = WM_APP + 1;
-    private const string ClassName = "StarDexsSyncTray", SyncNowMessage = "StarDexsSync.SyncNow";
+    private const string ClassName = "StarDexsSyncTray", SyncNowMessage = "StarDexsSync.SyncNow", ScheduleMessage = "StarDexsSync.Schedule";
     /// <summary>How often to look (locally, without going online) whether the game has closed.</summary>
     private static readonly TimeSpan GameCheck = TimeSpan.FromSeconds(15);
     private static TrayApp? _app;
 
-    private readonly bool _syncNow;
+    private readonly bool _syncNow, _refreshSchedule, _background;
     private readonly string? _account;
     private readonly string _version = typeof(TrayApp).Assembly.GetName().Version?.ToString(3) ?? "0";
     private readonly string _dataFolder =
@@ -43,7 +43,9 @@ internal sealed class TrayApp : IPanelActions
     private readonly CancellationTokenSource _quit = new();
     private TrayPanel? _panel;
     private FileSystemWatcher? _manifest;
-    private uint _taskbarCreated, _syncNowMessage;
+    /// <summary>Looks once a minute (on this PC) whether a sync the player scheduled is due.</summary>
+    private readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromMinutes(1) };
+    private uint _taskbarCreated, _syncNowMessage, _scheduleMessage;
     private nint _window, _icon;
     private string _status = "Ready.";
     private bool _needsAccess, _toldAccess, _toldUpdate, _busy;
@@ -53,10 +55,12 @@ internal sealed class TrayApp : IPanelActions
     private double _share;
     private string? _lastSync;
 
-    public TrayApp(bool syncNow, string? account)
+    public TrayApp(bool syncNow, string? account, bool refreshSchedule = false, bool background = false)
     {
         _syncNow = syncNow;
         _account = account;
+        _refreshSchedule = refreshSchedule;
+        _background = background;
         _store = new StateStore(_dataFolder, new DpapiProtector());
         _api = new SyncApi(SyncApi.CreateClient(Site(), _version));
         _engine = new SyncEngine(_api, _store, new InstallWriter(_dataFolder));
@@ -79,6 +83,7 @@ internal sealed class TrayApp : IPanelActions
         _panel = new TrayPanel(this);
         _taskbarCreated = RegisterWindowMessageW("TaskbarCreated");
         _syncNowMessage = RegisterWindowMessageW(SyncNowMessage);
+        _scheduleMessage = RegisterWindowMessageW(ScheduleMessage);
         try { SyncLink.Register(); } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
         var instance = GetModuleHandleW(null);
         fixed (char* className = ClassName)
@@ -99,8 +104,12 @@ internal sealed class TrayApp : IPanelActions
         var state = _store.Load();
         if (state.Accounts.Count == 0 || !GameFolder.IsLive(state.GameFolder)) Ask(Setup);
         else if (_syncNow) _ = SyncAsync(_account, manual: true);
-        else Balloon("StarDexs Companion is ready", "Press \"Send to my PC\" in your stardexs.com account when you want your file.");
+        else if (_refreshSchedule) _ = RefreshScheduleAsync(_account);
+        else if (!_background) Balloon("StarDexs Companion is ready", "Press \"Send to my PC\" in your stardexs.com account when you want your file.");
         WatchForGameUpdates();
+        ApplyAutoStart();
+        _clock.Tick += (_, _) => _ = RunDueAsync();
+        _clock.Start();
     }
 
     /// <summary>Called by a second copy started from the website's link: hand the request (and its account) to this one.</summary>
@@ -109,6 +118,43 @@ internal sealed class TrayApp : IPanelActions
         var window = FindWindowW(ClassName, null);
         if (window != 0) PostMessageW(window, RegisterWindowMessageW(SyncNowMessage), SyncLink.ToNumber(account), 0);
     }
+
+    /// <summary>Called by a second copy started from the website's "Save schedule": this one asks for the new schedule.</summary>
+    public static void AskRunningCopyForSchedule(string? account)
+    {
+        var window = FindWindowW(ClassName, null);
+        if (window != 0) PostMessageW(window, RegisterWindowMessageW(ScheduleMessage), SyncLink.ToNumber(account), 0);
+    }
+
+    // ---- automatic syncs, at the times the player chose on stardexs.com --------------------------------------
+
+    /// <summary>Syncs each account whose scheduled time has come, one after another.</summary>
+    private async Task RunDueAsync()
+    {
+        if (_busy || !GameFolder.IsLive(_store.Load().GameFolder)) return;
+        foreach (var account in _engine.DueAccounts(DateTimeOffset.UtcNow)) await SyncAsync(account, manual: false);
+    }
+
+    /// <summary>Asks stardexs.com for the schedule the player just saved for this PC; nothing is read or installed.</summary>
+    private async Task RefreshScheduleAsync(string? account)
+    {
+        // The page opens the link as it saves; give the save a moment to land first.
+        try { await Task.Delay(TimeSpan.FromSeconds(3), _quit.Token); }
+        catch (OperationCanceledException) { return; }
+        var (schedule, problem) = await Task.Run(() => _engine.RefreshScheduleAsync(account, _quit.Token));
+        Post(() =>
+        {
+            ApplyAutoStart();
+            _status = problem ?? (schedule is null ? "Automatic sync is off." : $"Automatic sync: {schedule.Describe()}.");
+            Refresh();
+            Balloon("StarDexs Companion", problem ?? (schedule is null
+                ? "Automatic sync is off. Syncs happen when you ask."
+                : $"Automatic sync: {schedule.Describe()}. StarDexs Companion starts with Windows so it can."), warning: problem is not null);
+        });
+    }
+
+    /// <summary>Starts with Windows only while some linked account has an automatic sync on.</summary>
+    private void ApplyAutoStart() => AutoStart.Set(_store.Load().Accounts.Values.Any(account => account.Schedule is { IsOn: true }));
 
     // ---- noticing a game update, on this PC only ------------------------------------------------------------
 
@@ -127,12 +173,20 @@ internal sealed class TrayApp : IPanelActions
         _manifest.EnableRaisingEvents = true;
     }
 
-    private void CheckGameUpdate()
+    private async void CheckGameUpdate()
     {
         if (_engine.GameUpdated() is null) return;
+        var accounts = _engine.OnGameUpdateAccounts();
         _status = "The game updated; your file is for the last patch.";
         UpdateTip();
-        Balloon("The game updated", "Your StarDexs file is for the last patch. Open your stardexs.com account and press \"Send to my PC\" when the new one is ready.");
+        if (accounts.Count == 0)
+        {
+            Balloon("The game updated", "Your StarDexs file is for the last patch. Open your stardexs.com account and press \"Send to my PC\" when the new one is ready.");
+            return;
+        }
+        // The player asked for a sync when the game updates. If stardexs.com hasn't built files for the new
+        // patch yet, this sends the logs and says so; a timed sync or "Send to my PC" fetches the file later.
+        foreach (var account in accounts) await SyncAsync(account, manual: false);
     }
 
     // ---- syncing -------------------------------------------------------------------------------------------
@@ -209,6 +263,7 @@ internal sealed class TrayApp : IPanelActions
     private void Show(SyncReport report, string? account, bool manual)
     {
         _needsAccess = report.NeedsPermission;
+        ApplyAutoStart(); // the sync brought this PC's schedule along
         Finish(SyncEngine.Succeeded(report), report.Message);
         if (report.Installed) Balloon("Your StarDexs file is installed", report.Message);
         else if (report.WaitingForGame)
@@ -227,7 +282,7 @@ internal sealed class TrayApp : IPanelActions
         else if (manual)
         {
             var sent = report.NewBlueprints + report.NewCompleted > 0
-                ? $" Sent {report.NewBlueprints} new blueprints and {report.NewCompleted} finished contracts."
+                ? $" Added {report.NewBlueprints} blueprints and {report.NewCompleted} finished contracts to your account."
                 : "";
             Balloon("StarDexs Companion", report.Message + sent);
         }
@@ -330,7 +385,7 @@ internal sealed class TrayApp : IPanelActions
             // A different install: its logs and files start from scratch.
             state.GameFolder = folder;
             state.InstalledAccount = state.InstalledPatch = state.InstalledSettings = state.InstalledSha = state.NoticedBuild = null;
-            foreach (var account in state.Accounts.Values) account.LogOffsets.Clear();
+            state.Logs.Clear();
         });
         return true;
     }
@@ -415,6 +470,7 @@ internal sealed class TrayApp : IPanelActions
         finally { _gate.Release(); }
         Post(() =>
         {
+            ApplyAutoStart();
             _status = said;
             _look = SyncBar.Look.Idle;
             _share = 0;
@@ -441,7 +497,8 @@ internal sealed class TrayApp : IPanelActions
     private PanelView View()
     {
         var state = _store.Load();
-        var accounts = state.Accounts.OrderBy(a => a.Value.Name, StringComparer.CurrentCultureIgnoreCase).Select(a => (a.Key, a.Value.Name)).ToList();
+        var accounts = state.Accounts.OrderBy(a => a.Value.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(a => (a.Key, a.Value.Name, a.Value.Schedule is { IsOn: true } schedule ? "Auto: " + schedule.Describe() : (string?)null)).ToList();
         return new PanelView(_status, _look, _share, _lastSync, accounts, GameFolder.IsLive(state.GameFolder),
             state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy, _release?.Version.ToString(3));
     }
@@ -533,6 +590,7 @@ internal sealed class TrayApp : IPanelActions
     void IPanelActions.Quit()
     {
         _quit.Cancel();
+        _clock.Stop();
         _manifest?.Dispose();
         RemoveIcon();
         DestroyWindow(_window);
@@ -630,6 +688,12 @@ internal sealed class TrayApp : IPanelActions
             {
                 // From a second copy started by "Send to my PC": wParam carries the account id, if the link had one.
                 _ = app.SyncAsync(SyncLink.FromNumber(wParam), manual: true);
+                return 0;
+            }
+            if (message == app._scheduleMessage && message != 0)
+            {
+                // From a second copy started by "Save schedule" on stardexs.com.
+                _ = app.RefreshScheduleAsync(SyncLink.FromNumber(wParam));
                 return 0;
             }
             if (message == app._taskbarCreated && message != 0)

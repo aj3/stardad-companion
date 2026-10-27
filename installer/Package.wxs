@@ -68,6 +68,11 @@
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Start StarDexs Companion" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <CustomAction Id="StartApp" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]StarDexsCompanion.exe&quot;" Return="asyncNoWait" Impersonate="yes" />
+    <!-- Uninstalling (not upgrading): the app takes away its own start-with-Windows entry, if a schedule had added one. -->
+    <CustomAction Id="StopStarting" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]StarDexsCompanion.exe&quot; --stop-starting" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="StopStarting" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
     <UI>
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="StartApp"
                Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />

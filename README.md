@@ -35,12 +35,19 @@ Windows backend is included.
 
 ## It only acts when you ask
 
-It doesn't check in on a timer, listen on a network port, or update itself
-without you pressing **Update**.
+It doesn't listen on a network port or update itself without you pressing
+**Update**.
 Nobody else can make it do anything, not even stardexs.com's own staff: the
 website has no way to reach your PC. The app only talks to stardexs.com when
-you press **Send to my PC** (or **Sync** in its menu), and only for an account
+you press **Send to my PC** (or **Sync** in its menu), or at the times you chose
+for that PC under **Automatic sync** in your account, and only for an account
 you linked on this PC yourself.
+
+Automatic sync is off until you turn it on. You can pick every 3, 6 or 12
+hours, or once a day at a set time on your PC's clock, and you can add "when the
+game updates". While one is on, the app starts with Windows (for your Windows
+account only), so it's running when a sync is due. When the last one is turned
+off, or the app is uninstalled, it stops starting with Windows.
 
 When you do, it:
 

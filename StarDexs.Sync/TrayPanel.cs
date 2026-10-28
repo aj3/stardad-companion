@@ -149,6 +149,7 @@ internal sealed class TrayPanel : Window
                 Children = { scroll, _footer },
             },
         };
+        PropertyChanged += (_, change) => { if (change.Property == IsVisibleProperty) _badge.SetActive(IsVisible); };
         Deactivated += (_, _) => Hide();
         KeyDown += (_, e) => { if (e.Key == Key.Escape) Hide(); };
         Opened += (_, _) => RoundCorners();

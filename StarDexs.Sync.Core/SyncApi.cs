@@ -29,7 +29,7 @@ public sealed class SyncApi(HttpClient http)
 
     public static HttpClient CreateClient(Uri site, string version)
     {
-        var client = new HttpClient { BaseAddress = site, Timeout = TimeSpan.FromSeconds(90) };
+        var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { BaseAddress = site, Timeout = TimeSpan.FromSeconds(90) };
         client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("StarDexs-Companion", version));
         return client;
     }
@@ -37,7 +37,10 @@ public sealed class SyncApi(HttpClient http)
     public async Task<LinkStart> StartLinkAsync(string deviceName, CancellationToken cancel)
     {
         var body = await PostAsync("api/sync/link/start", new JsonObject { ["device"] = deviceName }, null, cancel);
-        return new LinkStart(Text(body, "code"), Text(body, "poll"), new Uri(http.BaseAddress!, Text(body, "link")));
+        var page = new Uri(http.BaseAddress!, Text(body, "link"));
+        if (page.GetLeftPart(UriPartial.Authority) != http.BaseAddress!.GetLeftPart(UriPartial.Authority))
+            throw new HttpRequestException("The link page was outside the StarDad website.");
+        return new LinkStart(Text(body, "code"), Text(body, "poll"), page);
     }
 
     /// <summary>The device token once the player approves the code; null while waiting. Throws once the code has run out.</summary>
@@ -56,8 +59,8 @@ public sealed class SyncApi(HttpClient http)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/sync/status");
         var body = await SendJsonAsync(request, token, cancel);
-        return new SyncStatus(body?["patch"]?.GetValue<string>(), Text(body, "settings"), body?["has_settings"]?.GetValue<bool>() == true,
-            body?["account"]?.GetValue<string>(), body?["helper_latest"]?.GetValue<string>(), Schedule(body?["schedule"]));
+        return new SyncStatus(OptionalText(body, "patch"), Text(body, "settings"), body?["has_settings"] is JsonValue flag && flag.TryGetValue<bool>(out var has) && has,
+            OptionalText(body, "account"), OptionalText(body, "helper_latest"), Schedule(body?["schedule"]));
     }
 
     /// <summary>The automatic syncs the player chose for this PC; null when off or not understood.</summary>
@@ -78,22 +81,22 @@ public sealed class SyncApi(HttpClient http)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/sync/file/previous");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await http.SendAsync(request, cancel);
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel);
         if (response.StatusCode == HttpStatusCode.NotFound) return null;
         Check(response);
         var patch = response.Headers.TryGetValues("X-StarDexs-Patch", out var patches) ? patches.First() : "";
-        return new SyncFile(await response.Content.ReadAsByteArrayAsync(cancel), patch, "");
+        return new SyncFile(await HttpBody.ReadAsync(response, 32 * 1024 * 1024, cancel), patch, "");
     }
 
     public async Task<SyncFile> FileAsync(string token, CancellationToken cancel)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/sync/file");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await http.SendAsync(request, cancel);
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel);
         Check(response);
         var patch = response.Headers.TryGetValues("X-StarDexs-Patch", out var patches) ? patches.First() : "";
         var settings = response.Headers.TryGetValues("X-StarDexs-Settings", out var values) ? values.First() : "";
-        return new SyncFile(await response.Content.ReadAsByteArrayAsync(cancel), patch, settings);
+        return new SyncFile(await HttpBody.ReadAsync(response, 32 * 1024 * 1024, cancel), patch, settings);
     }
 
     /// <summary>Sends blueprints; returns how many the account didn't have yet.</summary>
@@ -140,10 +143,15 @@ public sealed class SyncApi(HttpClient http)
     private async Task<JsonNode?> SendJsonAsync(HttpRequestMessage request, string? token, CancellationToken cancel)
     {
         if (token is not null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await http.SendAsync(request, cancel);
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel);
         Check(response);
-        var text = await response.Content.ReadAsStringAsync(cancel);
-        return text.Length == 0 ? null : JsonNode.Parse(text);
+        var bytes = await HttpBody.ReadAsync(response, 64 * 1024, cancel);
+        try {
+            var body = bytes.Length == 0 ? null : JsonNode.Parse(bytes);
+            if (body is not null and not JsonObject) throw new HttpRequestException("The StarDad response was not an object.");
+            return body;
+        }
+        catch (System.Text.Json.JsonException exception) { throw new HttpRequestException("The StarDad response was not valid JSON.", exception); }
     }
 
     private static void Check(HttpResponseMessage response)
@@ -153,5 +161,9 @@ public sealed class SyncApi(HttpClient http)
     }
 
     private static string Text(JsonNode? body, string name) =>
-        body?[name]?.GetValue<string>() ?? throw new HttpRequestException($"The StarDad website sent no {name}.");
+        OptionalText(body, name) ?? throw new HttpRequestException($"The StarDad website sent no {name}.");
+
+    private static string? OptionalText(JsonNode? body, string name) =>
+        body?[name] is null ? null : body[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text
+            : throw new HttpRequestException($"The StarDad website sent invalid {name}.");
 }

@@ -49,7 +49,7 @@ internal sealed class TrayApp : IPanelActions
     private nint _window, _icon;
     private string _status = "Ready.";
     private bool _needsAccess, _toldAccess, _toldUpdate, _busy;
-    private int _asking, _waitingForGame;
+    private int _asking, _waitingForGame, _checkingDue;
     // The sync bar: how it looks, how far it has got, and the last result.
     private SyncBar.Look _look = SyncBar.Look.Idle;
     private double _share;
@@ -152,8 +152,13 @@ internal sealed class TrayApp : IPanelActions
     /// <summary>Syncs each account whose scheduled time has come, one after another.</summary>
     private async Task RunDueAsync()
     {
-        if (_busy || !GameFolder.IsLive(_store.Load().GameFolder)) return;
-        foreach (var account in _engine.DueAccounts(DateTimeOffset.UtcNow)) await SyncAsync(account, manual: false);
+        if (_busy || Interlocked.Exchange(ref _checkingDue, 1) != 0) return;
+        try
+        {
+            var due = await Task.Run(() => _engine.DueAccounts(DateTimeOffset.UtcNow));
+            foreach (var account in due) await SyncAsync(account, manual: false);
+        }
+        finally { Volatile.Write(ref _checkingDue, 0); }
     }
 
     /// <summary>Asks stardad.space for the schedule the player just saved for this PC; nothing is read or installed.</summary>

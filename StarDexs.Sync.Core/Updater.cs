@@ -28,9 +28,14 @@ public sealed class Updater(HttpClient http, string publicKey = Updater.ReleaseK
     /// <summary>The release named in a manifest, if it's validly signed and newer than <paramref name="current"/>.</summary>
     public Release? Check(string manifest, Version current)
     {
-        JsonNode? body;
-        try { body = JsonNode.Parse(manifest); }
-        catch (System.Text.Json.JsonException) { return null; }
+        if (manifest.Length > 64 * 1024) return null;
+        try { return CheckBody(manifest, current); }
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or InvalidOperationException or FormatException or CryptographicException) { return null; }
+    }
+
+    private Release? CheckBody(string manifest, Version current)
+    {
+        var body = JsonNode.Parse(manifest);
         if (body?["version"]?.GetValue<string>() is not { } text || !Version.TryParse(text, out var version)
             || body["file"]?.GetValue<string>() is not { } file || !IsPlainName(file)
             || body["sha256"]?.GetValue<string>() is not { Length: 64 } sha || !sha.All(Uri.IsHexDigit)
@@ -48,9 +53,9 @@ public sealed class Updater(HttpClient http, string publicKey = Updater.ReleaseK
     /// <summary>The newest signed release, or null when there's none newer (or the manifest doesn't check out).</summary>
     public async Task<Release?> NewestAsync(Version current, CancellationToken cancel)
     {
-        using var response = await http.GetAsync(ManifestPath, cancel);
+        using var response = await http.GetAsync(ManifestPath, HttpCompletionOption.ResponseHeadersRead, cancel);
         if (!response.IsSuccessStatusCode) return null;
-        return Check(await response.Content.ReadAsStringAsync(cancel), current);
+        return Check(Encoding.UTF8.GetString(await HttpBody.ReadAsync(response, 64 * 1024, cancel)), current);
     }
 
     /// <summary>
@@ -85,7 +90,8 @@ public sealed class Updater(HttpClient http, string publicKey = Updater.ReleaseK
             if (actual != release.Sha256) return "The download didn't match the signed release, so it wasn't used.";
             if (File.Exists(aside)) File.Delete(aside);
             File.Move(exe, aside);
-            File.Move(incoming, exe);
+            try { File.Move(incoming, exe); }
+            catch { if (!File.Exists(exe) && File.Exists(aside)) File.Move(aside, exe); throw; }
             return null;
         }
         catch (UnauthorizedAccessException) { return $"Windows won't let StarDad Companion update itself in {folder}. Download it from the StarDad website instead."; }

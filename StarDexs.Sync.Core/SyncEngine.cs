@@ -98,7 +98,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
             if (status.Patch is null) return Done(state, Report("StarDad has no file for this patch yet."));
             var current = status.Patch == state.InstalledPatch && status.Settings == state.InstalledSettings && account == state.InstalledAccount
                           && File.Exists(GameFolder.GlobalIniPath(state.GameFolder!))
-                          && state.InstalledSha == InstallWriter.Sha256(File.ReadAllBytes(GameFolder.GlobalIniPath(state.GameFolder!)));
+                          && state.InstalledSha == InstallWriter.Sha256File(GameFolder.GlobalIniPath(state.GameFolder!));
             if (current)
             {
                 await api.InstalledAsync(token, state.InstalledPatch!, state.InstalledSha!, cancel);
@@ -279,7 +279,9 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     public IReadOnlyList<string> DueAccounts(DateTimeOffset now)
     {
         var due = new List<string>();
-        foreach (var (id, linked) in store.Load().Accounts)
+        var state = store.Load();
+        if (!GameFolder.IsLive(state.GameFolder)) return due;
+        foreach (var (id, linked) in state.Accounts)
         {
             if (linked.Schedule is not { } schedule || linked.ScheduleSince is not { } since) continue;
             var from = linked.LastSync is { } last && last > since ? last : since;

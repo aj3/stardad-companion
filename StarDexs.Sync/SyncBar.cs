@@ -19,6 +19,7 @@ internal sealed class SyncBar : Control
     private readonly DispatcherTimer _frames = new() { Interval = TimeSpan.FromMilliseconds(16) };
     private DateTime _since = DateTime.UtcNow;
     private Look _look = Look.Idle;
+    private bool _active;
     private double _share, _shown;
 
     public SyncBar()
@@ -33,8 +34,15 @@ internal sealed class SyncBar : Control
         if (look != _look) _since = DateTime.UtcNow;
         _look = look;
         _share = Math.Clamp(share, 0, 1);
-        if (look is Look.Running or Look.Hit || Math.Abs(_shown - _share) > 0.001) _frames.Start();
+        if (_active && (look is Look.Running or Look.Hit || Math.Abs(_shown - _share) > 0.001)) _frames.Start();
         InvalidateVisual();
+    }
+
+    public void SetActive(bool active)
+    {
+        _active = active;
+        if (!active) _frames.Stop();
+        else Show(_look, _share);
     }
 
     private Color Colour => _look switch

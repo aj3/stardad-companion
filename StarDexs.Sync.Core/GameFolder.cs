@@ -36,6 +36,8 @@ public static partial class GameFolder
         var allowed = new[] { GlobalIniPath(live), GlobalIniTempPath(live), UserCfgPath(live) }.Select(Path.GetFullPath);
         if (!allowed.Contains(full, StringComparer.OrdinalIgnoreCase))
             throw new OutsideGameFilesException($"StarDad Companion only writes global.ini and user.cfg, not {Path.GetFileName(full)}.");
+        if (File.Exists(full) && File.GetAttributes(full).HasFlag(FileAttributes.ReparsePoint))
+            throw new OutsideGameFilesException("The destination is a file link, so StarDad Companion won't change it.");
         if (!full.Equals(Path.GetFullPath(UserCfgPath(live)), StringComparison.OrdinalIgnoreCase))
         {
             for (var folder = new DirectoryInfo(Path.GetDirectoryName(full)!);

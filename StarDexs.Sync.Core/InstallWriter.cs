@@ -37,6 +37,13 @@ public sealed class InstallWriter(string dataFolder, Func<bool>? gameRunning = n
 
     public static string Sha256(byte[] content) => Convert.ToHexStringLower(SHA256.HashData(content));
 
+    public static string Sha256File(string path)
+    {
+        using var stream = File.OpenRead(path);
+        if (stream.Length > MaxFileBytes) throw new IOException("The existing game text was larger than expected.");
+        return Convert.ToHexStringLower(SHA256.HashData(stream));
+    }
+
     /// <param name="ours">The hash of the global.ini StarDad Companion last installed, if any.</param>
     /// <param name="replaceUnknown">The player agreed to replace a global.ini that isn't <paramref name="ours"/>.</param>
     public WriteResult Install(string live, byte[] globalIni, string patch, string? ours, bool replaceUnknown = false)
@@ -49,7 +56,11 @@ public sealed class InstallWriter(string dataFolder, Func<bool>? gameRunning = n
         var sha = Sha256(globalIni);
         try
         {
-            var current = File.Exists(iniPath) ? Sha256(File.ReadAllBytes(iniPath)) : null;
+            GameFolder.CheckWritable(live, iniPath);
+            GameFolder.CheckWritable(live, cfgPath);
+            var current = File.Exists(iniPath) ? Sha256File(iniPath) : null;
+            if (File.Exists(cfgPath) && new FileInfo(cfgPath).Length > 1024 * 1024)
+                return new(WriteOutcome.Failed, "The existing user.cfg was larger than expected; it was left alone.");
             if (current is not null && current != sha && current != ours && !replaceUnknown)
                 return new(WriteOutcome.UnknownFile, "There's a global.ini in the game folder that StarDad Companion didn't put there.");
             var oldCfg = File.Exists(cfgPath) ? File.ReadAllText(cfgPath, Encoding.UTF8) : null;
@@ -81,7 +92,7 @@ public sealed class InstallWriter(string dataFolder, Func<bool>? gameRunning = n
         if (!File.Exists(iniPath)) return new(WriteOutcome.AlreadyCurrent, "There's no StarDad file in the game folder.");
         try
         {
-            if (Sha256(File.ReadAllBytes(iniPath)) != ours)
+            if (Sha256File(iniPath) != ours)
                 return new(WriteOutcome.UnknownFile, "The global.ini in the game folder isn't the one StarDad Companion installed, so it was left alone.");
             GameFolder.CheckWritable(live, iniPath);
             File.Delete(iniPath);

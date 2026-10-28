@@ -9,6 +9,18 @@ public class InstallWriterTests
     private static readonly byte[] Ini = Encoding.UTF8.GetBytes("a=1\n");
 
     [Fact]
+    public void Oversized_existing_files_are_left_untouched()
+    {
+        using var install = new FakeInstall();
+        var cfg = GameFolder.UserCfgPath(install.Live);
+        using (var file = File.Create(cfg)) file.SetLength(1024 * 1024 + 1);
+        var result = new InstallWriter(install.Data, () => false).Install(install.Live, Ini, "synthetic", null);
+        Assert.Equal(WriteOutcome.Failed, result.Outcome);
+        Assert.Equal(1024 * 1024 + 1, new FileInfo(cfg).Length);
+        Assert.False(File.Exists(GameFolder.GlobalIniPath(install.Live)));
+    }
+
+    [Fact]
     public void Installs_without_keeping_copies_on_the_PC()
     {
         using var install = new FakeInstall();

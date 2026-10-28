@@ -194,3 +194,12 @@ Windows code signing (so Windows names the publisher) is planned.
 | `StarDexs.Sync.Core` | Reading logs, finding the game, safe writes, the stardad.space calls. No user interface. |
 | `StarDexs.Sync` | The tray icon (plain Win32), the panel (Avalonia), and the dialogs. |
 | `StarDexs.Sync.Tests` | Tests. They use temporary folders and a fake site, never a real game install. |
+
+
+### 0.4.4 reliability and resource use
+
+Network metadata is capped at 64 KB and game-text downloads at 32 MB, including
+responses without Content-Length. Malformed update metadata is rejected, redirects
+are refused, and link approval stays on the configured website. Schedule checks
+read cached findings off the UI thread; the panel animation pauses while hidden.
+No new permissions, telemetry or background services are introduced.

@@ -41,6 +41,16 @@ public class UpdaterTests
         Assert.Null(updater.Check("not json", new Version(0, 2, 0)));
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("42")]
+    [InlineData("{\"version\":42}")]
+    [InlineData("{\"version\":\"9.9.9\",\"file\":[]}")]
+    public void Malformed_manifest_types_are_refused_without_crashing(string json)
+    {
+        Assert.Null(For(new Files(new())).Check(json, new Version(0, 2, 0)));
+    }
+
     [Fact]
     public void The_built_in_key_is_a_valid_public_key()
     {

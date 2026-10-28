@@ -25,7 +25,7 @@ internal sealed class TrayApp : IPanelActions
     private const uint WM_TRAY = WM_APP + 1;
     private const string ClassName = "StarDexsSyncTray", SyncNowMessage = "StarDexsSync.SyncNow", ScheduleMessage = "StarDexsSync.Schedule";
     /// <summary>How often to look (locally, without going online) whether the game has closed.</summary>
-    private static readonly TimeSpan GameCheck = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan GameCheck = TimeSpan.FromSeconds(2);
     private static TrayApp? _app;
 
     private readonly bool _syncNow, _refreshSchedule, _background;
@@ -45,7 +45,9 @@ internal sealed class TrayApp : IPanelActions
     /// <summary>Looks once a minute (on this PC) whether a sync the player scheduled is due.</summary>
     /// <summary>Made in Start: a DispatcherTimer made earlier (before Avalonia's Windows backend is set up) stops the app starting.</summary>
     private DispatcherTimer? _clock;
-    private uint _taskbarCreated, _syncNowMessage, _scheduleMessage;
+    private uint _taskbarCreated, _syncNowMessage, _scheduleMessage, _prepareMessage;
+    private bool _prepareOnly;
+    private string? _prepareAccount;
     private nint _window, _icon;
     private string _status = "Ready.";
     private bool _needsAccess, _toldAccess, _toldUpdate, _busy;
@@ -55,9 +57,10 @@ internal sealed class TrayApp : IPanelActions
     private double _share;
     private string? _lastSync;
 
-    public TrayApp(bool syncNow, string? account, bool refreshSchedule = false, bool background = false)
+    public TrayApp(bool syncNow, string? account, bool refreshSchedule = false, bool background = false, bool prepareOnly = false)
     {
         _syncNow = syncNow;
+        _prepareOnly = prepareOnly;
         _account = account;
         _refreshSchedule = refreshSchedule;
         _background = background;
@@ -103,6 +106,7 @@ internal sealed class TrayApp : IPanelActions
         _panel = new TrayPanel(this);
         _taskbarCreated = RegisterWindowMessageW("TaskbarCreated");
         _syncNowMessage = RegisterWindowMessageW(SyncNowMessage);
+        _prepareMessage = RegisterWindowMessageW("StarDadSync.Prepare");
         _scheduleMessage = RegisterWindowMessageW(ScheduleMessage);
         try { SyncLink.Register(); } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
         var instance = GetModuleHandleW(null);
@@ -123,6 +127,7 @@ internal sealed class TrayApp : IPanelActions
 
         var state = _store.Load();
         if (state.Accounts.Count == 0 || !GameFolder.IsLive(state.GameFolder)) Ask(Setup);
+        else if (_prepareOnly) _ = PrepareAsync(_account);
         else if (_syncNow) _ = SyncAsync(_account, manual: true);
         else if (_refreshSchedule) _ = RefreshScheduleAsync(_account);
         else if (!_background) Balloon("StarDad Companion is ready", "New links sync every 3 hours by default. Change the schedule in your account, or press Sync any time.");
@@ -131,6 +136,7 @@ internal sealed class TrayApp : IPanelActions
         _clock = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         _clock.Tick += (_, _) => _ = RunDueAsync();
         _clock.Start();
+        if (state.PendingInstall is not null) _ = FinishAfterGameClosesAsync(state.PendingInstall.Account);
     }
 
     /// <summary>Called by a second copy started from the website's link: hand the request (and its account) to this one.</summary>
@@ -138,6 +144,12 @@ internal sealed class TrayApp : IPanelActions
     {
         var window = FindWindowW(ClassName, null);
         if (window != 0) PostMessageW(window, RegisterWindowMessageW(SyncNowMessage), SyncLink.ToNumber(account), 0);
+    }
+
+    public static void AskRunningCopyToPrepare(string? account)
+    {
+        var window = FindWindowW(ClassName, null);
+        if (window != 0) PostMessageW(window, RegisterWindowMessageW("StarDadSync.Prepare"), SyncLink.ToNumber(account), 0);
     }
 
     /// <summary>Called by a second copy started from the website's "Save schedule": this one asks for the new schedule.</summary>
@@ -155,6 +167,8 @@ internal sealed class TrayApp : IPanelActions
         if (_busy || Interlocked.Exchange(ref _checkingDue, 1) != 0) return;
         try
         {
+            if (_store.Load().PendingInstall is { } pending && !InstallWriter.GameIsRunning())
+                await RunAsync(() => _engine.ResumePendingAsync(_quit.Token), report => Show(report, pending.Account, false));
             var due = await Task.Run(() => _engine.DueAccounts(DateTimeOffset.UtcNow));
             foreach (var account in due) await SyncAsync(account, manual: false);
         }
@@ -226,8 +240,14 @@ internal sealed class TrayApp : IPanelActions
         if (Interlocked.Exchange(ref _waitingForGame, 1) == 1) return;
         try
         {
-            while (InstallWriter.GameIsRunning()) await Task.Delay(GameCheck, _quit.Token);
-            await SyncAsync(account, manual: true);
+            var pulse = 0;
+            while (InstallWriter.GameIsRunning())
+            {
+                if (pulse++ % 5 == 0) await _engine.PulsePendingAsync(_quit.Token);
+                await Task.Delay(GameCheck, _quit.Token);
+            }
+            while (_busy) await Task.Delay(GameCheck, _quit.Token);
+            await RunAsync(() => _engine.ResumePendingAsync(_quit.Token), report => Show(report, account, true));
         }
         catch (OperationCanceledException) { }
         finally { Volatile.Write(ref _waitingForGame, 0); }
@@ -235,8 +255,18 @@ internal sealed class TrayApp : IPanelActions
 
     private async Task SyncAsync(string? account, bool manual)
     {
+        _prepareOnly = false;
         var stages = new StageReporter(stage => Post(() => Stage(stage)));
-        await RunAsync(() => _engine.RunAsync(account, _quit.Token, stages), report => Show(report, account, manual));
+        await RunAsync(() => _engine.RunAsync(account, _quit.Token, stages, manual: manual), report => Show(report, account, manual));
+    }
+
+    private async Task PrepareAsync(string? account)
+    {
+        _prepareOnly = true;
+        _prepareAccount = account;
+        if (_store.Token(_store.Load(), account ?? _store.Load().LastAccount) is null) { Ask(() => { if (Link(account)) Setup(); }); return; }
+        if (!GameFolder.IsLive(_store.Load().GameFolder)) { Ask(Setup); return; }
+        await RunAsync(() => _engine.RunAsync(account, _quit.Token, new StageReporter(stage => Post(() => Stage(stage))), prepareOnly: true), report => Show(report, account, true));
     }
 
     private void Stage(SyncStage stage)
@@ -295,6 +325,7 @@ internal sealed class TrayApp : IPanelActions
         if (report.Installed && notify) Balloon("Your StarDad file is installed", report.Message);
         else if (report.WaitingForGame)
         {
+            _look = SyncBar.Look.Idle; _share = 0; Refresh();
             if (notify) Balloon("StarDad Companion", "Your file goes in as soon as you close the game.");
             _ = FinishAfterGameClosesAsync(account);
         }
@@ -342,7 +373,7 @@ internal sealed class TrayApp : IPanelActions
         if (firstRun && !Link(_account)) return;
         if (!GameFolder.IsLive(_store.Load().GameFolder) && !ChooseFolder(GameFolder.Find())) return;
         if (firstRun) AllowInstalling();
-        Post(() => { WatchForGameUpdates(); _ = SyncAsync(_account, manual: true); });
+        Post(() => { WatchForGameUpdates(); _ = PrepareAsync(_prepareAccount ?? _account); });
     }
 
     /// <param name="expected">The account the website asked for, if any; linking a different one is allowed but said.</param>
@@ -470,7 +501,7 @@ internal sealed class TrayApp : IPanelActions
             if (grant?.ExitCode != 0) return;
         }
         catch (Win32Exception) { return; } // the player said no to Windows' prompt
-        Post(() => _ = SyncAsync(null, manual: true));
+        Post(() => _ = _prepareOnly ? PrepareAsync(null) : SyncAsync(null, manual: true));
     }
 
     private void PutBackPrevious()
@@ -561,7 +592,7 @@ internal sealed class TrayApp : IPanelActions
         if (_store.Load().Accounts.Count == 0) Ask(Setup);
         else Ask(() => Link(null));
     }
-    void IPanelActions.AllowInstalling() => Ask(() => { AllowInstalling(); Post(() => _ = SyncAsync(null, manual: true)); });
+    void IPanelActions.AllowInstalling() => Ask(() => { AllowInstalling(); Post(() => _ = _prepareOnly ? PrepareAsync(null) : SyncAsync(null, manual: true)); });
     void IPanelActions.AllowAccess() => Ask(AllowAccess);
     void IPanelActions.OpenSite() => Open(SyncApi.DefaultSite);
     void IPanelActions.ChangeFolder() => Ask(() => { if (ChooseFolder(GameFolder.Find())) Post(WatchForGameUpdates); });
@@ -723,6 +754,11 @@ internal sealed class TrayApp : IPanelActions
             {
                 // From a second copy started by "Send to my PC": wParam carries the account id, if the link had one.
                 _ = app.SyncAsync(SyncLink.FromNumber(wParam), manual: true);
+                return 0;
+            }
+            if (message == app._prepareMessage && message != 0)
+            {
+                _ = app.PrepareAsync(SyncLink.FromNumber(wParam));
                 return 0;
             }
             if (message == app._scheduleMessage && message != 0)

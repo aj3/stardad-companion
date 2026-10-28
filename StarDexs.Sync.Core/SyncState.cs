@@ -72,6 +72,7 @@ public sealed class LogFile
 /// <summary>Where the helper is up to: who it's linked to, what it read and installed, what the player agreed to.</summary>
 public sealed class SyncState
 {
+    public PendingInstall? PendingInstall { get; set; }
     /// <summary>Silent by default; optional notifications never affect website reporting.</summary>
     public string SyncNotifications { get; set; } = "silent";
     /// <summary>
@@ -102,7 +103,8 @@ public sealed class SyncState
     public Dictionary<string, LogFile> Logs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
-public sealed record PendingSyncResult(string RunId, string Message, bool Ok);
+public sealed record PendingSyncResult(string RunId, string Message, bool Ok, string Stage = "finished", string? Patch = null, string? Sha256 = null);
+public sealed record PendingInstall(string Account, string Folder, string Patch, string Settings, string Sha256, byte[] Data, string RunId);
 
 /// <summary>Reads and writes <see cref="SyncState"/> as JSON in the app's own folder; a damaged or older file starts fresh.</summary>
 public sealed class StateStore(string folder, ISecretProtector protector)
@@ -130,7 +132,11 @@ public sealed class StateStore(string folder, ISecretProtector protector)
     {
         Directory.CreateDirectory(folder);
         var temporary = Path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(state, StateJson.Default.SyncState));
+        using (var file = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            JsonSerializer.Serialize(file, state, StateJson.Default.SyncState);
+            file.Flush(flushToDisk: true);
+        }
         File.Move(temporary, Path, overwrite: true);
     }
 

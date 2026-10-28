@@ -17,14 +17,16 @@ internal static partial class SyncLink
     public const string OldScheme = "stardexs-sync";
     private static readonly string[] Schemes = [Scheme, OldScheme];
 
-    [GeneratedRegex(@"^(?:stardad|stardexs)-sync://(?:sync|schedule)/(?<account>[0-9a-f]{16})/?$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?:stardad|stardexs)-sync://(?:sync|schedule|prepare)/(?<account>[0-9a-f]{16})/?$", RegexOptions.CultureInvariant)]
     private static partial Regex WithAccount();
 
     public static bool IsScheduleRequest(string[] args) =>
         args.Any(arg => Schemes.Any(scheme => arg.StartsWith(scheme + "://schedule/", StringComparison.OrdinalIgnoreCase)));
 
     public static bool IsSyncRequest(string[] args) =>
-        !IsScheduleRequest(args) && args.Any(arg => arg == "--sync" || Schemes.Any(scheme => arg.StartsWith(scheme + ":", StringComparison.OrdinalIgnoreCase)));
+        !IsScheduleRequest(args) && !IsPrepareRequest(args) && args.Any(arg => arg == "--sync" || Schemes.Any(scheme => arg.StartsWith(scheme + ":", StringComparison.OrdinalIgnoreCase)));
+
+    public static bool IsPrepareRequest(string[] args) => args.Any(arg => WithAccount().IsMatch(arg) && arg.Contains("://prepare/", StringComparison.Ordinal));
 
     /// <summary>The account id in the link, or null (then the last account used).</summary>
     public static string? Account(string[] args) =>

@@ -88,7 +88,8 @@ another tool or one you edited, without asking you first.
 
 ## Backups
 
-The PC keeps no backup copies. stardad.space keeps the last two files you
+The PC keeps one pending update while the game runs, surviving app/PC restarts.
+Close the game and wait for Installed before relaunching it. stardad.space keeps the last two files you
 installed, and your account page lists them. From the tray menu you can:
 
 - **Put previous file back:** downloads the older of the two and installs it.

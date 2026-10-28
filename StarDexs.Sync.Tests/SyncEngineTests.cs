@@ -7,6 +7,96 @@ namespace StarDexs.Sync.Tests;
 public class SyncEngineTests
 {
     [Fact]
+    public async Task Unfinished_customizer_draft_syncs_logs_but_never_installs()
+    {
+        using var setup = new Setup(); setup.Site.HasSettings = false; setup.Install.Log("Game.log", Blueprint + "\n");
+        var report = await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.False(report.Installed); Assert.Equal(1, report.NewBlueprints);
+        Assert.DoesNotContain(setup.Site.Requests, r => r.Path == "/api/sync/file");
+    }
+    [Fact]
+    public async Task Preparation_sends_findings_but_never_downloads_or_installs()
+    {
+        using var setup = new Setup(); setup.Install.Log("Game.log", Blueprint + "\n");
+        var report = await setup.Engine.RunAsync(One, CancellationToken.None, prepareOnly:true);
+        Assert.True(report.Prepared); Assert.Equal(1, report.NewBlueprints);
+        Assert.DoesNotContain(setup.Site.Requests, r => r.Path == "/api/sync/file");
+        Assert.False(File.Exists(GameFolder.GlobalIniPath(setup.Install.Live)));
+    }
+    [Fact]
+    public async Task Preparation_needs_readable_logs_and_permission()
+    {
+        using var setup = new Setup();
+        Assert.False((await setup.Engine.RunAsync(One, CancellationToken.None, prepareOnly:true)).Prepared);
+        setup.Install.Log("Game.log", "No findings");
+        Assert.True((await setup.Engine.RunAsync(One, CancellationToken.None, prepareOnly:true)).Prepared);
+        var state = setup.Store.Load(); state.InstallAgreed = false; setup.Store.Save(state);
+        Assert.False((await setup.Engine.RunAsync(One, CancellationToken.None, prepareOnly:true)).Prepared);
+    }
+    [Fact]
+    public async Task Queued_output_survives_restart_and_installs_without_downloading_again()
+    {
+        using var setup = new Setup { GameRunning = true };
+        setup.Install.Log("build_manifest.id", """{"Data":{"RequestedP4ChangeNum":"1"}}""");
+        Assert.True((await setup.Engine.RunAsync(One, CancellationToken.None)).WaitingForGame);
+        var pending = setup.Store.Load().PendingInstall; Assert.NotNull(pending);
+        Assert.Equal(setup.Site.File, pending.Data);
+        Assert.False(File.Exists(GameFolder.GlobalIniPath(setup.Install.Live)));
+        setup.GameRunning = false; setup.Site.Requests.Clear();
+        var report = await setup.EngineFor(new Unreachable()).ResumePendingAsync(CancellationToken.None);
+        Assert.True(report.Installed); Assert.True(report.ConfirmationPending);
+        Assert.Null(setup.Store.Load().PendingInstall);
+        Assert.NotNull(setup.Store.Load().Accounts[One].PendingResult);
+        Assert.Equal(pending.Data, File.ReadAllBytes(GameFolder.GlobalIniPath(setup.Install.Live)));
+    }
+    [Theory]
+    [InlineData("hash")]
+    [InlineData("folder")]
+    [InlineData("permission")]
+    public async Task Queue_recovery_refuses_corrupt_or_changed_destinations(string problem)
+    {
+        using var setup = new Setup { GameRunning = true };
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        var state = setup.Store.Load();
+        if (problem == "hash") state.PendingInstall = state.PendingInstall! with { Sha256 = "bad" };
+        if (problem == "folder") state.GameFolder = null;
+        if (problem == "permission") state.InstallAgreed = false;
+        setup.Store.Save(state); setup.GameRunning = false;
+        Assert.False((await setup.Engine.ResumePendingAsync(CancellationToken.None)).Installed);
+        Assert.False(File.Exists(GameFolder.GlobalIniPath(setup.Install.Live)));
+    }
+    [Fact]
+    public async Task Another_accounts_automatic_sync_cannot_replace_a_queue()
+    {
+        using var setup = new Setup { GameRunning = true };
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        var state = setup.Store.Load(); setup.Store.Link(state, Two, "Other", "t-other"); setup.Store.Save(state);
+        await setup.Engine.RunAsync(Two, CancellationToken.None, manual:false);
+        Assert.Equal(One, setup.Store.Load().PendingInstall!.Account);
+    }
+    [Fact]
+    public async Task Invalid_replacement_retains_the_last_valid_queue()
+    {
+        using var setup = new Setup { GameRunning = true };
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        var valid = setup.Store.Load().PendingInstall!;
+        setup.Site.Settings = "new"; setup.Site.File = Encoding.UTF8.GetBytes("<html>partial</html>");
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Equal(valid.Sha256, setup.Store.Load().PendingInstall!.Sha256);
+    }
+    [Fact]
+    public async Task A_patch_change_rebuilds_the_queue_and_keeps_its_request_identity()
+    {
+        using var setup = new Setup { GameRunning = true };
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        var id = setup.Store.Load().PendingInstall!.RunId;
+        setup.Install.Log("build_manifest.id", """{"Data":{"RequestedP4ChangeNum":"2"}}""");
+        setup.Site.Patch = "4.10.2-live.2"; setup.GameRunning = false;
+        Assert.True((await setup.Engine.ResumePendingAsync(CancellationToken.None)).Installed);
+        Assert.Equal("4.10.2-live.2", setup.Store.Load().InstalledPatch);
+        Assert.Contains(setup.Site.Requests, r => r.Path == "/api/sync/workflow/report" && r.Body.Contains(id) && r.Body.Contains("finished"));
+    }
+    [Fact]
     public async Task Completion_is_retried_and_kept_until_the_website_confirms_it()
     {
         using var setup = new Setup();

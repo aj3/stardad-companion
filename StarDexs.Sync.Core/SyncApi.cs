@@ -123,6 +123,18 @@ public sealed class SyncApi(HttpClient http)
     public async Task ProgressAsync(string token, string stage, string? message, bool ok, CancellationToken cancel, string? runId = null) =>
         await PostAsync("api/sync/progress", new JsonObject { ["stage"] = stage, ["message"] = message, ["ok"] = ok, ["runId"] = runId }, token, cancel);
 
+    public async Task<string?> ClaimWorkflowAsync(string token, bool prepare, CancellationToken cancel)
+    {
+        var body = await PostAsync("api/sync/workflow/claim", new JsonObject { ["mode"] = prepare ? "prepare" : "apply" }, token, cancel);
+        var id = OptionalText(body, "id");
+        return Guid.TryParseExact(id, "N", out _) ? id : null;
+    }
+
+    public async Task WorkflowAsync(string token, string id, string? stage, CancellationToken cancel, string? message = null,
+        bool? logs = null, bool? folder = null, bool? allowed = null, string? settings = null) =>
+        await PostAsync("api/sync/workflow/report", new JsonObject { ["id"] = id, ["stage"] = stage, ["message"] = message,
+            ["logs"] = logs, ["folder"] = folder, ["allowed"] = allowed, ["settings"] = settings }, token, cancel);
+
     /// <summary>Unlinks this PC on the StarDad website: its token stops working.</summary>
     public async Task UnlinkAsync(string token, CancellationToken cancel) =>
         await PostAsync("api/sync/unlink", new JsonObject(), token, cancel);

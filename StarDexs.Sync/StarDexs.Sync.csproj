@@ -10,7 +10,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <AssemblyName>StarDadCompanion</AssemblyName>
     <RootNamespace>StarDexs.Sync</RootNamespace>
-    <Version>0.4.4</Version>
+    <Version>0.4.5</Version>
     <Product>StarDad Companion</Product>
     <Company>AJ Solutions, LLC</Company>
     <Description>Syncs your StarDad logs and file every 3 hours by default, or on your chosen schedule.</Description>

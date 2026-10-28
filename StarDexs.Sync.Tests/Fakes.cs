@@ -46,6 +46,7 @@ public sealed class FakeSite : HttpMessageHandler
     public string Settings { get; set; } = "s1";
     public byte[] File { get; set; } = Encoding.UTF8.GetBytes("key=Value\n");
     public bool Unlinked { get; set; }
+    public bool HasSettings { get; set; } = true;
     public int ConfirmationFailures { get; set; }
     public byte[]? Previous { get; set; }
     /// <summary>What the account holds, like the real site: each blueprint and contract once.</summary>
@@ -64,7 +65,7 @@ public sealed class FakeSite : HttpMessageHandler
         if (Unlinked && path.StartsWith("/api/sync/", StringComparison.Ordinal) && !path.Contains("/link/")) return new(HttpStatusCode.Unauthorized);
         return path switch
         {
-            "/api/sync/status" => Json($$"""{"patch":{{(Patch is null ? "null" : $"\"{Patch}\"")}},"settings":"{{Settings}}","has_settings":true,"account":"aaaaaaaaaaaaaaaa","helper_latest":"0.2.0","schedule":{{Schedule}}}"""),
+            "/api/sync/status" => Json($$"""{"patch":{{(Patch is null ? "null" : $"\"{Patch}\"")}},"settings":"{{Settings}}","has_settings":{{(HasSettings ? "true" : "false")}},"account":"aaaaaaaaaaaaaaaa","helper_latest":"0.2.0","schedule":{{Schedule}}}"""),
             "/api/sync/blueprints" => Json($$"""{"added":{{Keep(Owned, System.Text.Json.Nodes.JsonNode.Parse(body)!["owned"]!.AsArray().Select(b => b!["name"]!.GetValue<string>()))}}}"""),
             "/api/sync/completed" => Json($$"""{"added":{{Keep(Completed, System.Text.Json.Nodes.JsonNode.Parse(body)!["completed"]!.AsObject().Select(c => c.Key))}}}"""),
             "/api/sync/file/previous" => Previous is null ? new HttpResponseMessage(HttpStatusCode.NotFound) : FileResponse(Previous, "4.10.1-live.1"),

@@ -62,7 +62,7 @@ public static partial class LogReader
     /// Reads a log from <paramref name="offset"/> to its current end and returns the new offset. A partial
     /// last line is left for next time. If the file got shorter (the game started a new log), it starts over.
     /// </summary>
-    public static long ReadFrom(string path, long offset, LogFindings into)
+    public static long ReadFrom(string path, long offset, LogFindings into, Action? checkpoint = null)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         if (offset > stream.Length) offset = 0;
@@ -73,6 +73,7 @@ public static partial class LogReader
         int read;
         while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
         {
+            checkpoint?.Invoke();
             var start = 0;
             for (var i = 0; i < read; i++)
             {

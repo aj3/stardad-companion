@@ -23,7 +23,7 @@ internal static class PanelLayoutCheck
         public void CheckForUpdates() { }
         public void Update() { }
         public void Quit() { }
-        public void CycleSyncNotifications() { }
+        public void ReplaceUnknown() { }
     }
 
     private static Button Button(TrayPanel panel, string caption) => panel.GetVisualDescendants().OfType<Button>().Single(b =>
@@ -46,6 +46,11 @@ internal static class PanelLayoutCheck
         try
         {
             panel.Show(view); panel.Show(); Dispatcher.UIThread.RunJobs();
+            panel.Show(view with { UnknownFile = true }); Dispatcher.UIThread.RunJobs();
+            Require(Button(panel, "Review").IsEnabled, "File conflict has no explicit review action.");
+            panel.Show(view with { UnknownFile = true, Busy = true }); Dispatcher.UIThread.RunJobs();
+            Require(!Button(panel, "Review").IsEnabled, "Conflict review remained enabled during a sync.");
+            panel.Show(view); Dispatcher.UIThread.RunJobs();
             var collapsed = panel.Height;
             Click(Button(panel, "More options"));
             Require(panel.Height > collapsed + 60, $"Expanded panel did not grow: {collapsed} -> {panel.Height}.");

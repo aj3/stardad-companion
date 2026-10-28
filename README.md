@@ -31,9 +31,12 @@ It shows:
 - the app's actions.
 
 More options expands within the screen's working area. When space is short,
-the actions scroll and Quit remains visible. Sync notifications default to
-silent; the panel lets you choose attention-only or all sync results. The
-website still shows confirmations and keeps recent results in your account.
+the actions scroll and Quit remains visible. Syncs, schedule changes and update
+checks stay quiet; results and required actions appear in the panel and website.
+Account linking opens the approval page directly. An auto-detected game folder is
+used for reading; installation permission remains a separate panel action.
+Replacing an unrelated file, granting Windows access, restoring/removing files and
+unlinking still require an explicit action and confirmation.
 
 The panel is built with [Avalonia](https://avaloniaui.net), which is open
 source and draws native windows; it doesn't embed a browser. Only Avalonia's

@@ -11,7 +11,7 @@ namespace StarDexs.Sync;
 internal sealed record PanelView(
     string Status, SyncBar.Look Look, double Share, string? LastSync,
     IReadOnlyList<(string Id, string Name, string? Schedule)> Accounts, bool HasFolder, bool InstallAgreed, bool NeedsAccess, bool HasInstalled, bool Busy,
-    string? UpdateTo = null, string Notifications = "silent");
+    string? UpdateTo = null, bool UnknownFile = false);
 
 /// <summary>What the panel's buttons do; the tray app does it.</summary>
 internal interface IPanelActions
@@ -28,7 +28,7 @@ internal interface IPanelActions
     void CheckForUpdates();
     void Update();
     void Quit();
-    void CycleSyncNotifications();
+    void ReplaceUnknown();
 }
 
 /// <summary>
@@ -228,6 +228,8 @@ internal sealed class TrayPanel : Window
 
         // Anything that needs the player, as a tinted card with one button.
         _notices.Children.Clear();
+        if (view.UnknownFile)
+            _notices.Children.Add(Notice(Palette.Warn, Shield, "An existing file needs your review before replacing it", "Review", _actions.ReplaceUnknown, !view.Busy));
         if (view.UpdateTo is { } update)
             _notices.Children.Add(Notice(Palette.Accent, Download, $"Version {update} is ready", "Update", _actions.Update, !view.Busy));
         if (view.NeedsAccess)
@@ -251,7 +253,6 @@ internal sealed class TrayPanel : Window
         _menu.Children.Clear();
         _menu.Children.Add(Row(Globe, "Open the StarDad website", _actions.OpenSite));
         _menu.Children.Add(Row(Folder, "Change game folder…", _actions.ChangeFolder));
-        _menu.Children.Add(Row(Refresh, "Sync notifications: " + view.Notifications + " (change)", _actions.CycleSyncNotifications, closes: false));
 
         _extra.Children.Clear();
         if (view.Accounts.Count > 0) _extra.Children.Add(Row(Link, "Link another account…", _actions.Link));

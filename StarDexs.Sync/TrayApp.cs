@@ -50,7 +50,8 @@ internal sealed class TrayApp : IPanelActions
     private string? _prepareAccount;
     private nint _window, _icon;
     private string _status = "Ready.";
-    private bool _needsAccess, _toldAccess, _toldUpdate, _busy;
+    private bool _needsAccess, _toldUpdate, _busy, _unknownFile;
+    private string? _unknownAccount;
     private int _asking, _waitingForGame, _checkingDue;
     // The sync bar: how it looks, how far it has got, and the last result.
     private SyncBar.Look _look = SyncBar.Look.Idle;
@@ -130,7 +131,6 @@ internal sealed class TrayApp : IPanelActions
         else if (_prepareOnly) _ = PrepareAsync(_account);
         else if (_syncNow) _ = SyncAsync(_account, manual: true);
         else if (_refreshSchedule) _ = RefreshScheduleAsync(_account);
-        else if (!_background) Balloon("StarDad Companion is ready", "New links sync every 3 hours by default. Change the schedule in your account, or press Sync any time.");
         WatchForGameUpdates();
         ApplyAutoStart();
         _clock = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
@@ -187,9 +187,6 @@ internal sealed class TrayApp : IPanelActions
             ApplyAutoStart();
             _status = problem ?? (schedule is null ? "Automatic sync is off." : $"Automatic sync: {schedule.Describe()}.");
             Refresh();
-            Balloon("StarDad Companion", problem ?? (schedule is null
-                ? "Automatic sync is off. Syncs happen when you ask."
-                : $"Automatic sync: {schedule.Describe()}. StarDad Companion starts with Windows so it can."), warning: problem is not null);
         });
     }
 
@@ -221,7 +218,6 @@ internal sealed class TrayApp : IPanelActions
         UpdateTip();
         if (accounts.Count == 0)
         {
-            Balloon("The game updated", "Your StarDad file is for the last patch. Open your StarDad account and press \"Send to my PC\" when the new one is ready.");
             return;
         }
         // The player asked for a sync when the game updates. If stardad.space hasn't built files for the new
@@ -265,7 +261,6 @@ internal sealed class TrayApp : IPanelActions
         _prepareOnly = true;
         _prepareAccount = account;
         if (_store.Token(_store.Load(), account ?? _store.Load().LastAccount) is null) { Ask(() => { if (Link(account)) Setup(); }); return; }
-        if (!GameFolder.IsLive(_store.Load().GameFolder)) { Ask(Setup); return; }
         await RunAsync(() => _engine.RunAsync(account, _quit.Token, new StageReporter(stage => Post(() => Stage(stage))), prepareOnly: true), report => Show(report, account, true));
     }
 
@@ -321,29 +316,16 @@ internal sealed class TrayApp : IPanelActions
         _needsAccess = report.NeedsPermission;
         ApplyAutoStart(); // the sync brought this PC's schedule along
         Finish(SyncEngine.Succeeded(report), report.Message);
-        var notify = SyncNotifications.ShouldNotify(_store.Load().SyncNotifications, report);
-        if (report.Installed && notify) Balloon("Your StarDad file is installed", report.Message);
-        else if (report.WaitingForGame)
+        _unknownFile = report.UnknownFile;
+        _unknownAccount = report.UnknownFile ? account : null;
+        if (report.WaitingForGame)
         {
             _look = SyncBar.Look.Idle; _share = 0; Refresh();
-            if (notify) Balloon("StarDad Companion", "Your file goes in as soon as you close the game.");
             _ = FinishAfterGameClosesAsync(account);
         }
-        else if (report.UnknownFile) Ask(() => ReplaceUnknown(account));
-        else if (report.NotLinked && account is not null && manual) Ask(() => { if (Link(account)) Post(() => _ = SyncAsync(account, manual: true)); });
-        else if (report.NeedsPermission && manual) Ask(AllowAccess);
-        else if (report.NeedsPermission && !_toldAccess && notify)
-        {
-            _toldAccess = true;
-            Balloon("StarDad Companion needs your permission", "Right-click its icon and choose \"Allow access to the game folder\".", warning: true);
-        }
-        else if (notify)
-        {
-            var sent = report.NewBlueprints + report.NewCompleted > 0
-                ? $" Added {report.NewBlueprints} blueprints and {report.NewCompleted} finished contracts to your account."
-                : "";
-            Balloon("StarDad Companion", report.Message + sent);
-        }
+        // Problems remain visible in the panel and website. A background sync
+        // never opens a modal, starts account linking, or asks for elevation.
+        Refresh();
         if (!_toldUpdate && report.HelperLatest is { } latest && Version.TryParse(latest, out var newest)
             && Version.TryParse(_version, out var mine) && newest > mine)
         {
@@ -371,28 +353,19 @@ internal sealed class TrayApp : IPanelActions
     {
         var firstRun = _store.Load().Accounts.Count == 0;
         if (firstRun && !Link(_account)) return;
-        if (!GameFolder.IsLive(_store.Load().GameFolder) && !ChooseFolder(GameFolder.Find())) return;
-        if (firstRun) AllowInstalling();
-        Post(() => { WatchForGameUpdates(); _ = PrepareAsync(_prepareAccount ?? _account); });
+        if (!GameFolder.IsLive(_store.Load().GameFolder) && GameFolder.Find() is { } found) ChooseFolder(found);
+        Post(() => { WatchForGameUpdates(); if (firstRun || !GameFolder.IsLive(_store.Load().GameFolder)) ShowPanel(); _ = PrepareAsync(_prepareAccount ?? _account); });
     }
 
     /// <param name="expected">The account the website asked for, if any; linking a different one is allowed but said.</param>
     private bool Link(string? expected)
     {
         var device = Environment.MachineName;
-        var intro = expected is not null && _store.Load().Accounts.Count > 0
-            ? "You pressed \"Send to my PC\" in a StarDad account this PC isn't linked to yet. Link it now?\n\n"
-            : "Link this PC to your StarDad account.\n\n";
-        if (!Dialogs.Confirm(intro +
-                "Your browser will open a page with a code on it. Sign in to the account there and approve the code.\n\n" +
-                $"This PC will be listed on the account as \"{device}\". You can link more than one account.\n\n" +
-                "New links sync every 3 hours by default and start StarDad Companion with Windows. Change or turn off automatic syncing on your account page."))
-            return false;
         LinkStart start;
         try { start = _api.StartLinkAsync(device, _quit.Token).GetAwaiter().GetResult(); }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            Dialogs.Tell("Couldn't reach the StarDad website. Check your connection, then choose \"Link an account\" from the tray menu.", warning: true);
+            SetStatus("Couldn't reach StarDad. Use Link your StarDad account in the panel to retry.");
             return false;
         }
         Open(start.LinkPage);
@@ -404,7 +377,7 @@ internal sealed class TrayApp : IPanelActions
             catch (TimeoutException)
             {
                 SetStatus("Not linked.");
-                Dialogs.Tell("The code ran out before it was approved. Choose \"Link an account\" from the tray menu to try again.", warning: true);
+                SetStatus("The linking code expired. Use Link your StarDad account in the panel to retry.");
                 return false;
             }
             catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) { continue; }
@@ -413,31 +386,26 @@ internal sealed class TrayApp : IPanelActions
             ApplyAutoStart();
             SetStatus($"Linked to {ready.Name}.");
             if (expected is not null && ready.Account != expected)
-                Dialogs.Tell($"Linked to {ready.Name}, which isn't the account you pressed \"Send to my PC\" in. Press it again in the account you want.");
+                SetStatus($"Linked to {ready.Name}. Return to the intended StarDad account and check Companion again.");
             return ready.Account == expected || expected is null;
         }
         return false;
     }
 
     /// <summary>
-    /// The game folder: the one found on this PC if the player confirms it, otherwise one they pick (any folder
-    /// from Roberts Space Industries down to LIVE; LIVE is found inside it). Not for the main thread.
+    /// Accept an auto-detected installation for reading, or open the picker after an explicit panel action.
+    /// Installation permission remains a separate choice. Not for the main thread.
     /// </summary>
     private bool ChooseFolder(string? found)
     {
-        var current = _store.Load().GameFolder;
-        string? folder = null;
-        if (found is not null && !string.Equals(found, current, StringComparison.OrdinalIgnoreCase))
-            folder = Dialogs.Ask($"Found your game here:\n\n{found}\n\nUse this folder?") ? found : null;
-        else if (found is not null && !Dialogs.Ask($"StarDad Companion is using your game at:\n\n{found}\n\nPick a different folder?"))
-            return false;
+        string? folder = found;
         while (folder is null)
         {
             var picked = PickFolder();
             if (picked is null) return false;
             folder = GameFolder.ResolveLive(picked);
             if (folder is null)
-                Dialogs.Tell("There's no game in that folder. Pick your StarCitizen folder (or the LIVE folder inside it).", warning: true);
+            { SetStatus("No game found in that folder. Choose your StarCitizen/LIVE folder from the panel."); return false; }
         }
         Update(state =>
         {
@@ -535,7 +503,6 @@ internal sealed class TrayApp : IPanelActions
             _look = SyncBar.Look.Idle;
             _share = 0;
             Refresh();
-            Balloon("StarDad Companion", said);
         });
     }
 
@@ -560,7 +527,7 @@ internal sealed class TrayApp : IPanelActions
         var accounts = state.Accounts.OrderBy(a => a.Value.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(a => (a.Key, a.Value.Name, a.Value.Schedule is { IsOn: true } schedule ? "Auto: " + schedule.Describe() : (string?)null)).ToList();
         return new PanelView(_status, _look, _share, _lastSync, accounts, GameFolder.IsLive(state.GameFolder),
-            state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy, _release?.Version.ToString(3), state.SyncNotifications);
+            state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy, _release?.Version.ToString(3), _unknownFile);
     }
 
     private unsafe void ShowPanel()
@@ -579,13 +546,6 @@ internal sealed class TrayApp : IPanelActions
 
     // What the panel's buttons do.
     void IPanelActions.Sync(string account) => _ = SyncAsync(account, manual: true);
-    void IPanelActions.CycleSyncNotifications()
-    {
-        var state = _store.Load();
-        state.SyncNotifications = state.SyncNotifications switch { "silent" => "attention", "attention" => "all", _ => "silent" };
-        _store.Save(state);
-        Refresh();
-    }
     void IPanelActions.Unlink(string account) => Ask(() => UnlinkAccount(account));
     void IPanelActions.Link()
     {
@@ -595,7 +555,8 @@ internal sealed class TrayApp : IPanelActions
     void IPanelActions.AllowInstalling() => Ask(() => { AllowInstalling(); Post(() => _ = _prepareOnly ? PrepareAsync(null) : SyncAsync(null, manual: true)); });
     void IPanelActions.AllowAccess() => Ask(AllowAccess);
     void IPanelActions.OpenSite() => Open(SyncApi.DefaultSite);
-    void IPanelActions.ChangeFolder() => Ask(() => { if (ChooseFolder(GameFolder.Find())) Post(WatchForGameUpdates); });
+    void IPanelActions.ChangeFolder() => Ask(() => { if (ChooseFolder(null)) Post(WatchForGameUpdates); });
+    void IPanelActions.ReplaceUnknown() => Ask(() => ReplaceUnknown(_unknownAccount));
 
     /// <summary>Windows' own (modern) folder picker, opened from the UI thread; waits here for the answer.</summary>
     private string? PickFolder()
@@ -626,7 +587,7 @@ internal sealed class TrayApp : IPanelActions
             _release = found;
             if (found is not null)
             {
-                Balloon("A new StarDad Companion is ready", $"Version {found.Version.ToString(3)} is signed and ready. Click the tray icon and press Update.");
+                _status = $"Version {found.Version.ToString(3)} is ready. Open the panel and choose Update.";
             }
             else if (!quiet) _status = $"You have the newest StarDad Companion ({_version}).";
             Refresh();
@@ -642,7 +603,7 @@ internal sealed class TrayApp : IPanelActions
         var problem = await _updater.InstallAsync(release, exe, _quit.Token);
         if (problem is not null)
         {
-            Post(() => { _busy = false; _status = problem; Refresh(); Balloon("StarDad Companion", problem, warning: true); });
+            Post(() => { _busy = false; _status = problem; Refresh(); });
             return;
         }
         Post(() =>
@@ -696,15 +657,6 @@ internal sealed class TrayApp : IPanelActions
     {
         var data = IconData(NIF_TIP | NIF_SHOWTIP);
         Copy(data.szTip, 128, Tip());
-        Shell_NotifyIconW(NIM_MODIFY, &data);
-    }
-
-    private unsafe void Balloon(string title, string text, bool warning = false)
-    {
-        var data = IconData(NIF_INFO);
-        Copy(data.szInfoTitle, 64, title);
-        Copy(data.szInfo, 256, text);
-        data.dwInfoFlags = warning ? NIIF_WARNING : NIIF_INFO;
         Shell_NotifyIconW(NIM_MODIFY, &data);
     }
 

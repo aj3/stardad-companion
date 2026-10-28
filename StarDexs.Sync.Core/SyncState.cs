@@ -73,7 +73,7 @@ public sealed class LogFile
 public sealed class SyncState
 {
     public PendingInstall? PendingInstall { get; set; }
-    /// <summary>Silent by default; optional notifications never affect website reporting.</summary>
+    /// <summary>Legacy preference retained for downgrade compatibility. Current UI reports in the panel/website without balloons.</summary>
     public string SyncNotifications { get; set; } = "silent";
     /// <summary>
     /// 3 since logs are kept as what they held (not how far they were read). A version 2 file carries over:

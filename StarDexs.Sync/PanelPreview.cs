@@ -21,7 +21,7 @@ internal static class PanelPreview
         public void CheckForUpdates() { }
         public void Update() { }
         public void Quit() { }
-        public void CycleSyncNotifications() { }
+        public void ReplaceUnknown() { }
     }
 
     public static void Save(string path)

@@ -14,7 +14,7 @@ Download the installer from stardad.space/companion. It:
   accept before it installs;
 - installs for your Windows account only, with no administrator prompt, into
   `%LOCALAPPDATA%\Programs\StarDad Companion`;
-- adds Desktop and Start menu shortcuts and the `stardexs-sync:` link.
+- adds Desktop and Start menu shortcuts and the `stardad-sync:` link.
 
 Uninstall it from Windows Settings; that removes the shortcuts and the link
 too. The installer is built with WiX v5 from
@@ -27,16 +27,33 @@ It shows:
 
 - the sync bar: a tracer runs along it to the red crosshair while a sync works,
   and lands a hit when it's done;
-- each linked account, with its own **Sync** and **Unlink**;
-- the app's actions.
+- each linked account, with its own **Sync**;
+- **StarDad's home**, **Check for updates** and **Settings**.
 
-More options expands within the screen's working area. When space is short,
-the actions scroll and Quit remains visible. Syncs, schedule changes and update
+Settings opens a separate window for Game Folder, Restore Backup, Keybind backups,
+Link Another Account and Unlink. Restore Backup offers the previous global.ini or
+removing StarDad's text configuration. When space is short, actions scroll and
+Quit remains visible. Startup/programmatic opens anchor near the taskbar; a tray
+click opens by that click. Syncs, schedule changes and update
 checks stay quiet; results and required actions appear in the panel and website.
 Account linking opens the approval page directly. An auto-detected game folder is
 used for reading; installation permission remains a separate panel action.
 Replacing an unrelated file, granting Windows access, restoring/removing files and
 unlinking still require an explicit action and confirmation.
+
+## Keybind backups
+
+For linked accounts, Settings → Keybind backups can save exported
+`layout_Name_exported.xml` profiles from `LIVE/USER/Client/0/Controls/Mappings`.
+Automatic backup is opt-in per linked PC/account; changed content only is uploaded.
+Cloud limits are 10 profiles and 3 revisions each, 1 MiB per revision. Missing or
+empty exports do not erase previous cloud backups. Raw game logs are never uploaded.
+
+Restore is explicit, requires a closed game, checks the downloaded hash and narrow
+destination, and retains a previous known-good local export. Import the restored
+profile through the game's Control Profiles menu afterward. It does not restore
+unsaved changes, activate bindings, reorder joysticks or automatically recover after
+a patch. Restoring a profile is separate consent from installing global.ini.
 
 The panel is built with [Avalonia](https://avaloniaui.net), which is open
 source and draws native windows; it doesn't embed a browser. Only Avalonia's
@@ -82,8 +99,10 @@ When you do, it:
 |---|---|
 | Reads | `LIVE\Game.log`, `LIVE\logbackups\*.log`, `LIVE\build_manifest.id` (the game's build number) |
 | Writes | `LIVE\data\Localization\english\global.ini` (plus a temporary file beside it while swapping), `LIVE\user.cfg` |
+| Optional keybind reads/restores | `LIVE\USER\Client\0\Controls\Mappings\layout_*_exported.xml` (restore needs separate confirmation; temporary and previous copies stay beside the export) |
 
-Any other path is refused in code (`GameFolder.CheckWritable`). So is a
+Other configuration paths are refused in code (`GameFolder.CheckWritable`,
+`KeybindFiles`). So is a
 language folder that's really a link to somewhere else on your PC.
 
 It never replaces a `global.ini` it didn't put there, for example one from

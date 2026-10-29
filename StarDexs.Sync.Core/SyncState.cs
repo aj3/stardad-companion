@@ -30,6 +30,8 @@ public sealed class DpapiProtector : ISecretProtector
 /// <summary>One stardad.space account linked on this PC. A PC can hold several (players who switch accounts).</summary>
 public sealed class LinkedAccount
 {
+    public bool BackupKeybinds { get; set; }
+    public Dictionary<string,string> KeybindHashes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public PendingSyncResult? PendingResult { get; set; }
     /// <summary>The device token, protected with <see cref="ISecretProtector"/>.</summary>
     public string ProtectedToken { get; set; } = "";
@@ -119,6 +121,7 @@ public sealed class StateStore(string folder, ISecretProtector protector)
             {
                 state.Version = SyncState.CurrentVersion;
                 state.Accounts = new Dictionary<string, LinkedAccount>(state.Accounts, StringComparer.Ordinal);
+                foreach (var account in state.Accounts.Values) account.KeybindHashes ??= new(StringComparer.OrdinalIgnoreCase);
                 state.Logs = new Dictionary<string, LogFile>(state.Logs, StringComparer.OrdinalIgnoreCase);
                 foreach (var log in state.Logs.Values) log.Completed = new Dictionary<string, string>(log.Completed, StringComparer.OrdinalIgnoreCase);
                 return state;

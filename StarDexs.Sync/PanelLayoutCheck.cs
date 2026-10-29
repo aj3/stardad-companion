@@ -21,6 +21,7 @@ internal static class PanelLayoutCheck
         public void PutBackPrevious() { }
         public void RemoveFile() { }
         public void CheckForUpdates() { }
+        public void Keybinds() { }
         public void Update() { }
         public void Quit() { }
         public void ReplaceUnknown() { }
@@ -38,6 +39,13 @@ internal static class PanelLayoutCheck
         if (!condition) throw new InvalidOperationException(message);
     }
 
+    private static void Capture(Window window, string path)
+    {
+        var content = (Control)window.Content!;
+        using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize((int)content.Bounds.Width, (int)content.Bounds.Height));
+        bitmap.Render(content); bitmap.Save(path);
+    }
+
     public static void Run(string? screenshot = null)
     {
         var view = new PanelView("Your file is up to date.", SyncBar.Look.Hit, 1, "Last synced just now",
@@ -51,30 +59,32 @@ internal static class PanelLayoutCheck
             panel.Show(view with { UnknownFile = true, Busy = true }); Dispatcher.UIThread.RunJobs();
             Require(!Button(panel, "Review").IsEnabled, "Conflict review remained enabled during a sync.");
             panel.Show(view); Dispatcher.UIThread.RunJobs();
+            Require(panel.GetVisualDescendants().OfType<Button>().Where(b=>b.IsVisible).All(b=>b.Bounds.Height>=43), "A panel action is smaller than the minimum target height.");
             var collapsed = panel.Height;
-            Click(Button(panel, "More options"));
-            Require(panel.Height > collapsed + 60, $"Expanded panel did not grow: {collapsed} -> {panel.Height}.");
+            if (screenshot is not null) Capture(panel, screenshot + ".main.png");
+            Click(Button(panel, "Settings"));
+            Require(panel.SettingsWindow?.IsVisible == true, "Settings did not open.");
+            Require(Math.Abs(panel.Height - collapsed) <= 2, "Opening Settings resized the main panel.");
+            if (screenshot is not null) Capture(panel.SettingsWindow!, screenshot + ".settings.png");
+            panel.SettingsWindow!.Close(); Dispatcher.UIThread.RunJobs();
             Require(Button(panel, "Quit").TranslatePoint(new Point(0, Button(panel, "Quit").Bounds.Height), panel) is { } end && end.Y <= panel.ClientSize.Height,
                 "The footer is clipped after expansion.");
-            Click(Button(panel, "Fewer options"));
             Require(Math.Abs(panel.Height - collapsed) <= 2, "Collapsed panel did not shrink back.");
             panel.MaxHeight = 300;
             panel.Show(view with { Accounts = Enumerable.Range(1, 10).Select(i => ($"account-{i}", $"Sample account {i}", (string?)"Auto: Every 3 hours")).ToArray() });
-            Dispatcher.UIThread.RunJobs(); Click(Button(panel, "More options"));
+            Dispatcher.UIThread.RunJobs();
             Require(panel.Height <= 300, "Panel exceeded its height limit.");
             var scroll = panel.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault(s => s.Extent.Height > s.Viewport.Height + 1);
             Require(scroll is not null, "Tall panel has no usable scrolling fallback.");
             scroll!.Offset = new Vector(0, scroll.Extent.Height); Dispatcher.UIThread.RunJobs();
-            var last = Button(panel, "Unlink Sample account 10…");
+            var last = Button(panel, "Settings");
             Require(last.TranslatePoint(new Point(0, last.Bounds.Height), panel) is { } bottom && bottom.Y <= panel.ClientSize.Height,
                 "The last expanded action cannot be reached by scrolling.");
             Require(Button(panel, "Quit").TranslatePoint(new Point(0, Button(panel, "Quit").Bounds.Height), panel) is { } footer && footer.Y <= panel.ClientSize.Height,
                 "The footer is clipped in the short panel.");
             if (screenshot is not null)
             {
-                var content = (Control)panel.Content!;
-                using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize((int)content.Bounds.Width, (int)content.Bounds.Height));
-                bitmap.Render(content); bitmap.Save(screenshot);
+                Capture(panel, screenshot);
             }
         }
         finally { panel.Close(); }

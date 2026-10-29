@@ -530,8 +530,9 @@ internal sealed class TrayApp : IPanelActions
             state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy, _release?.Version.ToString(3), _unknownFile);
     }
 
-    private unsafe void ShowPanel()
+    private unsafe void ShowPanel(bool fromTray = false)
     {
+        if (!fromTray) { _panel?.ShowDocked(View()); return; }
         POINT point;
         GetCursorPos(&point);
         _panel?.ShowNear(new PixelPoint(point.X, point.Y), View());
@@ -555,6 +556,10 @@ internal sealed class TrayApp : IPanelActions
     void IPanelActions.AllowInstalling() => Ask(() => { AllowInstalling(); Post(() => _ = _prepareOnly ? PrepareAsync(null) : SyncAsync(null, manual: true)); });
     void IPanelActions.AllowAccess() => Ask(AllowAccess);
     void IPanelActions.OpenSite() => Open(SyncApi.DefaultSite);
+    void IPanelActions.Keybinds()
+    {
+        var window=new KeybindWindow(_api,_store,_gate,value=>{_busy=value;Refresh();},_quit.Token);window.Show();
+    }
     void IPanelActions.ChangeFolder() => Ask(() => { if (ChooseFolder(null)) Post(WatchForGameUpdates); });
     void IPanelActions.ReplaceUnknown() => Ask(() => ReplaceUnknown(_unknownAccount));
 
@@ -698,7 +703,7 @@ internal sealed class TrayApp : IPanelActions
                 case WM_TRAY:
                     // Version 4 icons put the event in the low word of lParam.
                     var trayEvent = (uint)(lParam & 0xFFFF);
-                    if (trayEvent is WM_CONTEXTMENU or WM_RBUTTONUP or NIN_SELECT or NIN_KEYSELECT) app.ShowPanel();
+                    if (trayEvent is WM_CONTEXTMENU or WM_RBUTTONUP or NIN_SELECT or NIN_KEYSELECT) app.ShowPanel(fromTray: true);
                     else if (trayEvent == NIN_BALLOONUSERCLICK) Open(SyncApi.DefaultSite);
                     return 0;
             }

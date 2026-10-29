@@ -10,7 +10,9 @@ public sealed record LinkStart(string Code, string Poll, Uri LinkPage);
 public sealed record LinkReady(string Token, string Account, string Name);
 /// <param name="Account">Which account the token belongs to (its public id).</param>
 /// <param name="HelperLatest">The newest StarDad Companion version on the StarDad website, so the app can mention an update.</param>
-public sealed record SyncStatus(string? Patch, string Settings, bool HasSettings, string? Account = null, string? HelperLatest = null, SyncSchedule? Schedule = null);
+public sealed record SyncStatus(string? Patch, string Settings, bool HasSettings, string? Account = null, string? HelperLatest = null, SyncSchedule? Schedule = null, bool KeybindBackup = false);
+public sealed record KeybindCopy(string Id,string Name,string Source,string Created,string Sha256);
+public sealed record KeybindDownload(string Name,byte[] Data,string Sha256);
 public sealed record SyncFile(byte[] Data, string Patch, string Settings);
 
 /// <summary>The account says this PC isn't linked any more (unlinked on the website, or the token is gone).</summary>
@@ -21,7 +23,8 @@ public sealed class NotLinkedException : Exception;
 /// they chose:
 /// linking, asking whether the player's file is current (and which automatic syncs they chose), downloading it
 /// (or the previous one), and sending blueprint names, completed contract titles and the installed file's hash.
-/// Nothing else about the PC, the game or the player is sent.
+/// Opt-in keybind actions also transfer exported XML profiles and their filename/build/hash.
+/// Original game log text and unrelated PC files are never sent.
 /// </summary>
 public sealed class SyncApi(HttpClient http)
 {
@@ -60,7 +63,7 @@ public sealed class SyncApi(HttpClient http)
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/sync/status");
         var body = await SendJsonAsync(request, token, cancel);
         return new SyncStatus(OptionalText(body, "patch"), Text(body, "settings"), body?["has_settings"] is JsonValue flag && flag.TryGetValue<bool>(out var has) && has,
-            OptionalText(body, "account"), OptionalText(body, "helper_latest"), Schedule(body?["schedule"]));
+            OptionalText(body, "account"), OptionalText(body, "helper_latest"), Schedule(body?["schedule"]), body?["keybind_backup"] is JsonValue backup && backup.TryGetValue<bool>(out var enabled) && enabled);
     }
 
     /// <summary>The automatic syncs the player chose for this PC; null when off or not understood.</summary>
@@ -142,6 +145,31 @@ public sealed class SyncApi(HttpClient http)
     /// <summary>Tells stardad.space which file is now installed, so it keeps that one as a backup.</summary>
     public async Task InstalledAsync(string token, string patch, string sha256, CancellationToken cancel) =>
         await PostAsync("api/sync/installed", new JsonObject { ["patch"] = patch, ["sha256"] = sha256 }, token, cancel);
+
+    public async Task<IReadOnlyList<KeybindCopy>> KeybindsAsync(string token,CancellationToken cancel)
+    {
+        using var request=new HttpRequestMessage(HttpMethod.Get,"api/sync/keybinds");var body=await SendJsonAsync(request,token,cancel);
+        if(body?["backups"] is not JsonArray rows)throw new HttpRequestException("StarDad sent no keybind list.");
+        if(rows.Count>30)throw new HttpRequestException("The keybind list exceeded its limit.");
+        return rows.Select(row=>new KeybindCopy(Text(row,"id"),Text(row,"name"),Text(row,"sourceName"),Text(row,"created"),Text(row,"sha256"))).ToArray();
+    }
+    public async Task<bool> UploadKeybindAsync(string token,string name,byte[] bytes,string? patch,CancellationToken cancel)
+    {
+        KeybindFiles.Validate(name,bytes);var result=await PostAsync("api/sync/keybinds",new JsonObject{["name"]=name,["data"]=Convert.ToBase64String(bytes),["patch"]=patch},token,cancel);
+        return result?["added"] is JsonValue added&&added.TryGetValue<bool>(out var value)&&value;
+    }
+    public async Task SetKeybindBackupAsync(string token,bool enabled,CancellationToken cancel)=>
+        await PostAsync("api/sync/keybinds/preference",new JsonObject{["enabled"]=enabled},token,cancel);
+    public async Task<KeybindDownload> DownloadKeybindAsync(string token,string id,CancellationToken cancel)
+    {
+        if(!Guid.TryParseExact(id,"N",out _))throw new HttpRequestException("The backup id is invalid.");
+        using var request=new HttpRequestMessage(HttpMethod.Get,"api/sync/keybinds/"+id);request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);
+        using var response=await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,cancel);Check(response);
+        var name=response.Headers.TryGetValues("X-StarDad-Keybind-Name",out var names)?names.Single():"";
+        var hash=response.Headers.TryGetValues("X-StarDad-Keybind-Sha",out var hashes)?hashes.Single():"";
+        var data=await HttpBody.ReadAsync(response,KeybindFiles.MaxBytes,cancel);KeybindFiles.Validate(name,data);
+        if(KeybindFiles.Hash(data)!=hash)throw new HttpRequestException("The profile failed its integrity check.");return new(name,data,hash);
+    }
 
     private async Task<JsonNode?> PostAsync(string path, JsonObject body, string? token, CancellationToken cancel)
     {

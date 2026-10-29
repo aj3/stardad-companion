@@ -19,6 +19,7 @@ internal static class PanelPreview
         public void PutBackPrevious() { }
         public void RemoveFile() { }
         public void CheckForUpdates() { }
+        public void Keybinds() { }
         public void Update() { }
         public void Quit() { }
         public void ReplaceUnknown() { }

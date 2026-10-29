@@ -140,12 +140,28 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
             await Stage(SyncStage.Checking);
             var status = await api.StatusAsync(token, cancel);
             TakeSchedule(state.Accounts[account!], status.Schedule);
+            state.Accounts[account!].BackupKeybinds=status.KeybindBackup;
+            var keybindNote="";
+            if(status.KeybindBackup)
+            {
+                try
+                {
+                    foreach(var name in KeybindFiles.Exports(state.GameFolder!))
+                    {
+                        var data=KeybindFiles.Read(state.GameFolder!,name);var hash=KeybindFiles.Hash(data);var key=Path.Combine(Path.GetFullPath(state.GameFolder!),name);
+                        if(state.Accounts[account!].KeybindHashes.GetValueOrDefault(key)==hash)continue;
+                        await api.UploadKeybindAsync(token,name,data,status.Patch,cancel);state.Accounts[account!].KeybindHashes[key]=hash;
+                    }
+                }
+                catch(Exception e)when(e is IOException or UnauthorizedAccessException or HttpRequestException)
+                {keybindNote=" Keybind backup needs attention. Existing cloud backups are kept; review Keybind backups in Settings.";}
+            }
             SyncReport Report(string message, bool installed = false, bool permission = false, bool waiting = false, bool unknown = false) =>
-                new(message, installed, permission, false, waiting, unknown, blueprints, completed, status.HelperLatest);
+                new(message+keybindNote, installed, permission, false, waiting, unknown, blueprints, completed, status.HelperLatest);
 
             if (prepareOnly) return Done(state, Report(state.Logs.Count == 0 ? "No readable game logs found. Start the game once, then check again."
                 : !state.InstallAgreed ? "Logs synced. Allow installing in Companion to finish setup."
-                : "Companion is ready. Your logs are synced; return to Customize to choose your options.") with { Prepared = state.Logs.Count > 0 && state.InstallAgreed, Completed = state.Logs.Count > 0 && state.InstallAgreed });
+                : "Logs synced. Choose your options on StarDad.") with { Prepared = state.Logs.Count > 0 && state.InstallAgreed, Completed = state.Logs.Count > 0 && state.InstallAgreed });
             if (!status.HasSettings) return Done(state, Report("Logs synced. Finish Customize on the website before installing a file."));
 
             if (status.Patch is null) return Done(state, Report("StarDad has no file for this patch yet."));

@@ -26,6 +26,7 @@ internal interface IPanelActions
     void PutBackPrevious();
     void RemoveFile();
     void CheckForUpdates();
+    void Keybinds();
     void Update();
     void Quit();
     void ReplaceUnknown();
@@ -51,11 +52,13 @@ internal sealed class TrayPanel : Window
     private readonly StackPanel _notices = new() { Spacing = 8 };
     private readonly StackPanel _accounts = new() { Spacing = 8 };
     private readonly StackPanel _menu = new() { Spacing = 1 };
-    private readonly StackPanel _extra = new() { Spacing = 1, IsVisible = false };
     private readonly Button _moreToggle;
     private readonly StackPanel _body;
     private readonly Control _footer;
     private PanelView? _view;
+    private bool _settingsOpen;
+    internal Window? SettingsWindow { get; private set; }
+    internal Window? RestoreWindow { get; private set; }
 
     public TrayPanel(IPanelActions actions)
     {
@@ -72,14 +75,7 @@ internal sealed class TrayPanel : Window
         Background = Palette.Brush(Palette.Background);
         FontSize = 13;
 
-        _moreToggle = Row(Down, "More options", () =>
-        {
-            _extra.IsVisible = !_extra.IsVisible;
-            SetToggle();
-            Fit();
-            Place();
-            QueueFit();
-        }, closes: false);
+        _moreToggle = Row("", "Settings", OpenSettings, closes: false);
 
         var header = new Grid
         {
@@ -105,7 +101,7 @@ internal sealed class TrayPanel : Window
         var version = typeof(TrayPanel).Assembly.GetName().Version?.ToString(3) ?? "";
         var quit = new Button
         {
-            Content = "Quit", Padding = new Thickness(8, 3), FontSize = 12, Background = Brushes.Transparent,
+            Content = "Quit", MinHeight=44, Padding = new Thickness(8, 3), FontSize = 12, Background = Brushes.Transparent,
             Foreground = Palette.Brush(Palette.Soft), HorizontalAlignment = HorizontalAlignment.Right,
         };
         quit.Classes.Add("row");
@@ -129,7 +125,7 @@ internal sealed class TrayPanel : Window
                 status,
                 new StackPanel { Margin = new Thickness(12, 8, 12, 0), Spacing = 8, Children = { _notices, _accounts } },
                 new Border { Height = 1, Background = Palette.Brush(Palette.Border), Margin = new Thickness(16, 12, 16, 6) },
-                new StackPanel { Margin = new Thickness(8, 0), Children = { _menu, _moreToggle, _extra } },
+                new StackPanel { Margin = new Thickness(8, 0), Children = { _menu, _moreToggle } },
             },
         };
         var scroll = new ScrollViewer
@@ -150,7 +146,7 @@ internal sealed class TrayPanel : Window
             },
         };
         PropertyChanged += (_, change) => { if (change.Property == IsVisibleProperty) _badge.SetActive(IsVisible); };
-        Deactivated += (_, _) => Hide();
+        Deactivated += (_, _) => { if (!_settingsOpen) Hide(); };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) Hide(); };
         Opened += (_, _) => RoundCorners();
     }
@@ -159,8 +155,6 @@ internal sealed class TrayPanel : Window
     public void ShowNear(PixelPoint click, PanelView view)
     {
         _anchor = click;
-        _extra.IsVisible = false;
-        SetToggle();
         Show(view);
         Fit();
         Place();
@@ -173,6 +167,12 @@ internal sealed class TrayPanel : Window
     }
 
     private PixelPoint? _anchor;
+
+    public void ShowDocked(PanelView view)
+    {
+        var area = Screens.Primary?.WorkingArea;
+        ShowNear(area is { } bounds ? new PixelPoint(bounds.Right - 8, bounds.Bottom - 8) : new PixelPoint(1000, 700), view);
+    }
 
     /// <summary>The panel's height for its contents right now, measured before it's drawn.</summary>
     private void Fit()
@@ -243,7 +243,7 @@ internal sealed class TrayPanel : Window
         _accounts.Children.Clear();
         if (view.Accounts.Count == 0)
         {
-            var link = new Button { Content = "Link your StarDad account", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(12, 9) };
+            var link = new Button { Content = "Link your StarDad account", MinHeight=44, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(12, 9) };
             Primary(link);
             link.Click += (_, _) => { Hide(); _actions.Link(); };
             _accounts.Children.Add(link);
@@ -251,16 +251,8 @@ internal sealed class TrayPanel : Window
         foreach (var (id, name, schedule) in view.Accounts) _accounts.Children.Add(AccountCard(id, name, schedule, view));
 
         _menu.Children.Clear();
-        _menu.Children.Add(Row(Globe, "Open the StarDad website", _actions.OpenSite));
-        _menu.Children.Add(Row(Folder, "Change game folder…", _actions.ChangeFolder));
-
-        _extra.Children.Clear();
-        if (view.Accounts.Count > 0) _extra.Children.Add(Row(Link, "Link another account…", _actions.Link));
-        _extra.Children.Add(Row(Undo, "Put previous file back…", _actions.PutBackPrevious, enabled: view.HasFolder && view.HasInstalled && !view.Busy));
-        _extra.Children.Add(Row(Remove, "Remove StarDad from the game…", _actions.RemoveFile, enabled: view.HasFolder && view.HasInstalled && !view.Busy));
-        _extra.Children.Add(Row(Refresh, "Check for updates", _actions.CheckForUpdates, enabled: !view.Busy));
-        foreach (var (id, name, _) in view.Accounts)
-            _extra.Children.Add(Row(Unlinked, $"Unlink {name}…", () => _actions.Unlink(id), enabled: !view.Busy));
+        _menu.Children.Add(Row(Globe, "StarDad's home", _actions.OpenSite));
+        _menu.Children.Add(Row(Refresh, "Check for updates", _actions.CheckForUpdates, enabled: !view.Busy));
     }
 
     public PanelView? View => _view;
@@ -278,7 +270,7 @@ internal sealed class TrayPanel : Window
     /// <summary>One linked account: its name, when it syncs on its own, and its Sync button.</summary>
     private Border AccountCard(string id, string name, string? schedule, PanelView view)
     {
-        var sync = new Button { Content = "Sync", IsEnabled = view.HasFolder && !view.Busy, Padding = new Thickness(16, 6), VerticalAlignment = VerticalAlignment.Center };
+        var sync = new Button { Content = "Sync", MinHeight=44, IsEnabled = view.HasFolder && !view.Busy, Padding = new Thickness(16, 6), VerticalAlignment = VerticalAlignment.Center };
         Primary(sync);
         sync.Click += (_, _) => _actions.Sync(id);
         var when = Small(schedule ?? "Syncs when you ask", Palette.Faint);
@@ -308,7 +300,7 @@ internal sealed class TrayPanel : Window
     {
         var go = new Button
         {
-            Content = button, IsEnabled = enabled, Padding = new Thickness(12, 5), VerticalAlignment = VerticalAlignment.Center,
+            Content = button, MinHeight=44, IsEnabled = enabled, Padding = new Thickness(12, 5), VerticalAlignment = VerticalAlignment.Center,
             Background = Palette.Tint(colour, 0.22), Foreground = Palette.Brush(colour), FontWeight = FontWeight.SemiBold, CornerRadius = new CornerRadius(7),
         };
         go.Click += (_, _) => { Hide(); act(); };
@@ -335,14 +327,14 @@ internal sealed class TrayPanel : Window
         var button = new Button
         {
             IsEnabled = enabled, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left,
-            Background = Brushes.Transparent, Padding = new Thickness(8, 7), CornerRadius = new CornerRadius(6),
+            Background = Brushes.Transparent, Padding = new Thickness(8, 7), CornerRadius = new CornerRadius(6), MinHeight = 44,
             Content = new StackPanel
             {
                 Orientation = Orientation.Horizontal, Spacing = 12,
                 Children =
                 {
                     new TextBlock { Text = icon, FontFamily = Palette.Icons, FontSize = 14, Width = 16, Foreground = Palette.Brush(enabled ? Palette.Soft : Palette.Faint), VerticalAlignment = VerticalAlignment.Center },
-                    new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center },
+                    new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, MaxWidth=270, TextWrapping=TextWrapping.Wrap },
                 },
             },
         };
@@ -351,13 +343,38 @@ internal sealed class TrayPanel : Window
         return button;
     }
 
-    private void SetToggle()
+    private Window OptionsWindow(string title, StackPanel content)
     {
-        if (_moreToggle.Content is StackPanel { Children: [TextBlock icon, TextBlock words] })
-        {
-            icon.Text = _extra.IsVisible ? Up : Down;
-            words.Text = _extra.IsVisible ? "Fewer options" : "More options";
-        }
+        var close = new Button { Content = "Close", MinHeight = 44, HorizontalAlignment = HorizontalAlignment.Right };
+        var available=Screens.Primary is {} screen ? screen.WorkingArea.Height/screen.Scaling-64 : 640;
+        var window = new Window { Title=title, Width=410, MaxHeight=Math.Max(180,Math.Min(640,available)), SizeToContent=SizeToContent.Height, CanResize=false,
+            ShowInTaskbar=false, WindowStartupLocation=WindowStartupLocation.CenterScreen, Background=Palette.Brush(Palette.Background), Foreground=Palette.Brush(Palette.Text) };
+        var body = new StackPanel { Margin=new Thickness(20), Spacing=12, Children={new TextBlock { Text=title, FontSize=21, FontWeight=FontWeight.SemiBold }, content, close} };
+        window.Content=new ScrollViewer { Content=body, HorizontalScrollBarVisibility=Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
+        close.Click+=(_,_)=>window.Close(); window.KeyDown+=(_,e)=>{if(e.Key==Key.Escape)window.Close();}; return window;
+    }
+
+    private async void OpenSettings()
+    {
+        if(_view is not {} view || _settingsOpen)return;
+        var content=new StackPanel { Spacing=4 };var window=OptionsWindow("StarDad Settings",content);SettingsWindow=window;
+        Button Setting(string icon,string label,Action action,bool enabled=true)=>Row(icon,label,()=>{window.Close();Hide();action();},enabled,closes:false);
+        content.Children.Add(Setting(Folder,"Game Folder",_actions.ChangeFolder,!view.Busy));
+        content.Children.Add(Row(Undo,"Restore Backup",()=>OpenRestore(window),view.HasFolder&&view.HasInstalled&&!view.Busy,closes:false));
+        content.Children.Add(Setting(Undo,"Keybind backups",_actions.Keybinds,view.Accounts.Count>0&&!view.Busy));
+        content.Children.Add(Setting(Link,"Link Another Account",_actions.Link,!view.Busy));
+        foreach(var (id,name,_) in view.Accounts)content.Children.Add(Setting(Unlinked,$"Unlink {name}",()=>_actions.Unlink(id),!view.Busy));
+        _settingsOpen=true;
+        try { await window.ShowDialog(this); } finally { _settingsOpen=false;SettingsWindow=null; }
+    }
+
+    private async void OpenRestore(Window owner)
+    {
+        var content=new StackPanel { Spacing=8 };var window=OptionsWindow("Restore Backup",content);RestoreWindow=window;
+        content.Children.Add(Small("Restore your previous global.ini, or remove StarDad's installed text configuration. Your game logs and keybinds are kept.",Palette.Soft));
+        content.Children.Add(Row(Undo,"Restore previous backup",()=>{window.Close();owner.Close();Hide();_actions.PutBackPrevious();},closes:false));
+        content.Children.Add(Row(Remove,"Delete StarDad configuration",()=>{window.Close();owner.Close();Hide();_actions.RemoveFile();},closes:false));
+        try { await window.ShowDialog(owner); } finally { RestoreWindow=null; }
     }
 
     /// <summary>The teal tint for main actions (the hover and press shades come from the app's styles).</summary>

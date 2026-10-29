@@ -136,9 +136,9 @@ aren't secret. The app uses that id only to choose between the accounts
 already linked on that PC. Each account gets its own token. Whichever account
 you press **Send to my PC** in, that account's file goes in.
 
-## The `stardexs-sync:` link
+## The `stardad-sync:` link
 
-The Send to my PC button opens a `stardexs-sync://sync/<account id>` link.
+The Send to my PC button opens a `stardad-sync://sync/<account id>` link. The old `stardexs-sync:` scheme remains a compatibility alias.
 This app registers that link for your Windows account only.
 
 The app reads nothing from the link except that id, and it must be exactly 16
@@ -149,7 +149,7 @@ can't pass in data, a different site, or a command.
 ## Downloads must be game text
 
 The app installs a download only if it's UTF-8 text made of `key=value`
-lines, 64 MB at most. Even a compromised server could only ever put text in
+lines, 32 MB at most. Even a compromised server could only ever put text in
 that one file. The app never runs anything it downloads.
 
 ## Administrator rights

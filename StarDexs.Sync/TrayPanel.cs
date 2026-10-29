@@ -270,7 +270,7 @@ internal sealed class TrayPanel : Window
     /// <summary>One linked account: its name, when it syncs on its own, and its Sync button.</summary>
     private Border AccountCard(string id, string name, string? schedule, PanelView view)
     {
-        var sync = new Button { Content = "Sync", MinHeight=44, IsEnabled = view.HasFolder && !view.Busy, Padding = new Thickness(16, 6), VerticalAlignment = VerticalAlignment.Center };
+        var sync = new Button { Content = "Sync", MinWidth=76, MinHeight=44, IsEnabled = view.HasFolder && !view.Busy, Padding = new Thickness(16, 6), VerticalAlignment = VerticalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center };
         Primary(sync);
         sync.Click += (_, _) => _actions.Sync(id);
         var when = Small(schedule ?? "Syncs when you ask", Palette.Faint);

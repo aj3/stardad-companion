@@ -113,12 +113,12 @@ internal static class PanelLayoutCheck
             Require(window.ClientSize.Height<=680,"Controls window exceeded its height cap.");
             var undersized=window.GetVisualDescendants().OfType<Button>().Where(b=>b.IsEffectivelyVisible&&b.Content is string&&b.Bounds.Height<43).Select(b=>$"{b.Content} ({b.Bounds.Height})").ToArray();
             Require(undersized.Length==0,"A controls action is undersized: "+string.Join(", ",undersized));
-            Require(window.GetVisualDescendants().OfType<Button>().Any(b=>b.Content as string=="Undo last active-controls recovery"),"Recovery undo action is missing.");
+            Require(window.GetVisualDescendants().OfType<Button>().Any(b=>b.Content as string=="Undo the last restore"),"Recovery undo action is missing.");
             if(screenshot is not null)Capture(window,screenshot+".controls.png");
             var scroll=window.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault(s=>s.Extent.Height>s.Viewport.Height+1);
-            Require(scroll is not null,"The recovery controls have no scroll path.");
-            scroll!.Offset=new Vector(0,scroll.Extent.Height);Dispatcher.UIThread.RunJobs();
-            var undo=window.GetVisualDescendants().OfType<Button>().Single(b=>b.Content as string=="Undo last active-controls recovery");
+            // The controls tab may fit without scrolling; if it doesn't, scroll to the end before checking.
+            if(scroll is not null){scroll.Offset=new Vector(0,scroll.Extent.Height);Dispatcher.UIThread.RunJobs();}
+            var undo=window.GetVisualDescendants().OfType<Button>().Single(b=>b.Content as string=="Undo the last restore");
             Require(undo.TranslatePoint(new Point(0,undo.Bounds.Height),window) is {} end&&end.Y<window.ClientSize.Height,"Undo recovery is unreachable.");
             if(screenshot is not null)Capture(window,screenshot+".controls-end.png");
         }

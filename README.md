@@ -43,6 +43,15 @@ unlinking still require an explicit action and confirmation.
 
 ## Keybind backups
 
+Unreleased validation preview: Settings also offers an explicitly enabled local
+active-controls baseline for `USER/Client/0/Profiles/default/actionmaps.xml`.
+It is separate from cloud exported-profile backups. A newer stable patch with
+missing/reset controls may restore while the game is closed, with schema/hash
+and device checks. Populated conflicts and changed hardware require review.
+Device metadata does not prove joystick ordering in game. Real-game acceptance
+is still pending; do not promise guaranteed pre-launch recovery. Temporary and
+previous copies stay beside the active file; the baseline stays outside LIVE.
+
 For linked accounts, Settings → Keybind backups can save exported
 `layout_Name_exported.xml` profiles from `LIVE/USER/Client/0/Controls/Mappings`.
 Automatic backup is opt-in per linked PC/account; changed content only is uploaded.
@@ -226,3 +235,18 @@ responses without Content-Length. Malformed update metadata is rejected, redirec
 are refused, and link approval stays on the configured website. Schedule checks
 read cached findings off the UI thread; the panel animation pauses while hidden.
 No new permissions, telemetry or background services are introduced.
+
+### Candidate recovery and update safeguards
+
+Active-control recovery is an explicit per-account, per-installation opt-in.
+Its last-good baseline stays on this PC, separate from cloud exported profiles.
+The controls window separates exports from active recovery and provides explicit
+restore and Undo. Recovery waits for the game to close and preserves conflicting
+or edited files. Unlinking disables it. Empty exports and cleared device slots
+cannot replace a good backup. Real game-load/HOTAS acceptance is still pending;
+temporary-folder tests do not establish that a game accepted a restored layout.
+
+Update clicks recheck the latest signed manifest instead of trusting an old
+panel offer. A removed download can trigger one refresh for a strictly newer
+signed replacement. Signatures and SHA-256 remain mandatory; unsigned fallback
+and downgrades are refused. A failed check is reported as a failure.

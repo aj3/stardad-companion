@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using StarDexs.Sync.Core;
 
 namespace StarDexs.Sync;
 
@@ -88,5 +89,40 @@ internal static class PanelLayoutCheck
             }
         }
         finally { panel.Close(); }
+        CheckControls(screenshot);
     }
+    private sealed class PreviewProtector:ISecretProtector{public string Protect(string value)=>value;public string? Unprotect(string value)=>value;}
+    private sealed class PreviewApi:HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken cancel)
+        {
+            var body=request.RequestUri!.AbsolutePath.EndsWith("/status")?"{\"settings\":\"sample\",\"has_settings\":false}":"{\"backups\":[]}";
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK){Content=new StringContent(body,System.Text.Encoding.UTF8,"application/json")});
+        }
+    }
+    private static void CheckControls(string? screenshot)
+    {
+        var folder=Directory.CreateTempSubdirectory("stardad-controls-layout-").FullName;
+        using var gate=new SemaphoreSlim(1,1);using var http=new HttpClient(new PreviewApi()){BaseAddress=new Uri("https://sample.invalid/")};
+        var store=new StateStore(folder,new PreviewProtector());var state=new SyncState();store.Link(state,"sample","Sample account","sample-token");store.Save(state);
+        var window=new KeybindWindow(new SyncApi(http),store,gate,_=>{},CancellationToken.None){Position=new PixelPoint(-4000,-4000),ShowActivated=false,WindowStartupLocation=WindowStartupLocation.Manual};
+        try
+        {
+            window.Show();Dispatcher.UIThread.RunJobs();
+            var tabs=window.GetVisualDescendants().OfType<TabControl>().Single();tabs.SelectedIndex=1;Dispatcher.UIThread.RunJobs();
+            Require(window.ClientSize.Height<=680,"Controls window exceeded its height cap.");
+            var undersized=window.GetVisualDescendants().OfType<Button>().Where(b=>b.IsEffectivelyVisible&&b.Content is string&&b.Bounds.Height<43).Select(b=>$"{b.Content} ({b.Bounds.Height})").ToArray();
+            Require(undersized.Length==0,"A controls action is undersized: "+string.Join(", ",undersized));
+            Require(window.GetVisualDescendants().OfType<Button>().Any(b=>b.Content as string=="Undo last active-controls recovery"),"Recovery undo action is missing.");
+            if(screenshot is not null)Capture(window,screenshot+".controls.png");
+            var scroll=window.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault(s=>s.Extent.Height>s.Viewport.Height+1);
+            Require(scroll is not null,"The recovery controls have no scroll path.");
+            scroll!.Offset=new Vector(0,scroll.Extent.Height);Dispatcher.UIThread.RunJobs();
+            var undo=window.GetVisualDescendants().OfType<Button>().Single(b=>b.Content as string=="Undo last active-controls recovery");
+            Require(undo.TranslatePoint(new Point(0,undo.Bounds.Height),window) is {} end&&end.Y<window.ClientSize.Height,"Undo recovery is unreachable.");
+            if(screenshot is not null)Capture(window,screenshot+".controls-end.png");
+        }
+        finally{window.Close();Directory.Delete(folder,true);}
+    }
+
 }

@@ -6,6 +6,7 @@ namespace StarDexs.Sync.Core;
 
 /// <summary>A release stardad.space offers, after its signature checked out.</summary>
 public sealed record Release(Version Version, string File, string Sha256);
+public sealed record UpdateResult(Release? Release,bool Installed,string? Problem);
 
 /// <summary>
 /// Updating StarDad Companion, only when the player presses Update. stardad.space/downloads/companion.json
@@ -50,19 +51,53 @@ public sealed class Updater(HttpClient http, string publicKey = Updater.ReleaseK
         return version > current ? new Release(version, file, sha.ToLowerInvariant()) : null;
     }
 
-    /// <summary>The newest signed release, or null when there's none newer (or the manifest doesn't check out).</summary>
+    /// <summary>The newest verified release, or null only when a valid listing has no newer release.</summary>
     public async Task<Release?> NewestAsync(Version current, CancellationToken cancel)
     {
-        using var response = await http.GetAsync(ManifestPath, HttpCompletionOption.ResponseHeadersRead, cancel);
-        if (!response.IsSuccessStatusCode) return null;
-        return Check(Encoding.UTF8.GetString(await HttpBody.ReadAsync(response, 64 * 1024, cancel)), current);
+        using var request=new HttpRequestMessage(HttpMethod.Get,ManifestPath);
+        request.Headers.CacheControl=new(){NoCache=true,NoStore=true};
+        using var response=await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,cancel);
+        response.EnsureSuccessStatusCode();
+        var manifest=Encoding.UTF8.GetString(await HttpBody.ReadAsync(response,64*1024,cancel));
+        var verified=Check(manifest,new Version(0,0));
+        if(verified is null)throw new InvalidDataException("The update listing could not be verified. The installed app was kept.");
+        return verified.Version>current ? verified : null;
     }
+
+    /// <summary>Recheck at click time; retry once if a newer signed release supersedes a removed download.</summary>
+    public async Task<UpdateResult> InstallNewestAsync(Version current,string exe,Action<Release>? selected,CancellationToken cancel)
+    {
+        Release? release=null;
+        try
+        {
+            release=await NewestAsync(current,cancel);
+            if(release is null)return new(null,false,null);
+            selected?.Invoke(release);
+            var attempt=await TryInstallAsync(release,exe,cancel);
+            if(attempt.Missing)
+            {
+                var replacement=await NewestAsync(current,cancel);
+                if(replacement is not null&&replacement.Version>release.Version)
+                {
+                    release=replacement;selected?.Invoke(release);
+                    attempt=await TryInstallAsync(release,exe,cancel);
+                }
+            }
+            return new(release,attempt.Problem is null,attempt.Problem);
+        }
+        catch(HttpRequestException){return new(release,false,"Couldn't check the latest update. The installed app was kept. Try again shortly.");}
+        catch(InvalidDataException e){return new(release,false,e.Message);}
+    }
+
+    private sealed record InstallAttempt(string? Problem,bool Missing=false);
+    public async Task<string?> InstallAsync(Release release,string exe,CancellationToken cancel)=>
+        (await TryInstallAsync(release,exe,cancel)).Problem;
 
     /// <summary>
     /// Downloads a release next to <paramref name="exe"/> and swaps it in: the running file is renamed aside
     /// (Windows allows that), the new one takes its name. Returns the problem, or null when it's in place.
     /// </summary>
-    public async Task<string?> InstallAsync(Release release, string exe, CancellationToken cancel)
+    private async Task<InstallAttempt> TryInstallAsync(Release release, string exe, CancellationToken cancel)
     {
         var folder = Path.GetDirectoryName(exe)!;
         var incoming = exe + ".new";
@@ -71,8 +106,8 @@ public sealed class Updater(HttpClient http, string publicKey = Updater.ReleaseK
         {
             using (var response = await http.GetAsync("downloads/" + release.File, HttpCompletionOption.ResponseHeadersRead, cancel))
             {
-                if (!response.IsSuccessStatusCode) return "The update isn't on the StarDad website right now. Try again later.";
-                if (response.Content.Headers.ContentLength > MaxDownloadBytes) return "The update was larger than expected, so it wasn't used.";
+                if (!response.IsSuccessStatusCode) return new("That update download is no longer available. Check for the latest release and try again.",response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone);
+                if (response.Content.Headers.ContentLength > MaxDownloadBytes) return new("The update was larger than expected, so it wasn't used.");
                 await using var source = await response.Content.ReadAsStreamAsync(cancel);
                 await using var target = new FileStream(incoming, FileMode.Create, FileAccess.Write, FileShare.None);
                 var buffer = new byte[81920];
@@ -81,22 +116,22 @@ public sealed class Updater(HttpClient http, string publicKey = Updater.ReleaseK
                 while ((read = await source.ReadAsync(buffer, cancel)) > 0)
                 {
                     total += read;
-                    if (total > MaxDownloadBytes) return "The update was larger than expected, so it wasn't used.";
+                    if (total > MaxDownloadBytes) return new("The update was larger than expected, so it wasn't used.");
                     await target.WriteAsync(buffer.AsMemory(0, read), cancel);
                 }
             }
             string actual;
             await using (var check = File.OpenRead(incoming)) actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(check, cancel));
-            if (actual != release.Sha256) return "The download didn't match the signed release, so it wasn't used.";
+            if (actual != release.Sha256) return new("The download didn't match the signed release, so it wasn't used.");
             if (File.Exists(aside)) File.Delete(aside);
             File.Move(exe, aside);
             try { File.Move(incoming, exe); }
             catch { if (!File.Exists(exe) && File.Exists(aside)) File.Move(aside, exe); throw; }
-            return null;
+            return new(null);
         }
-        catch (UnauthorizedAccessException) { return $"Windows won't let StarDad Companion update itself in {folder}. Download it from the StarDad website instead."; }
-        catch (IOException exception) { return $"Couldn't update: {exception.Message}"; }
-        catch (HttpRequestException) { return "Couldn't reach the StarDad website. Try again in a moment."; }
+        catch (UnauthorizedAccessException) { return new($"Windows won't let StarDad Companion update itself in {folder}. Download it from the StarDad website instead."); }
+        catch (IOException exception) { return new($"Couldn't update: {exception.Message}"); }
+        catch (HttpRequestException) { return new("Couldn't reach the StarDad website. Try again in a moment."); }
         finally
         {
             try { if (File.Exists(incoming)) File.Delete(incoming); } catch (IOException) { } catch (UnauthorizedAccessException) { }

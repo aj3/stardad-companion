@@ -74,6 +74,7 @@ public sealed class LogFile
 /// <summary>Where the helper is up to: who it's linked to, what it read and installed, what the player agreed to.</summary>
 public sealed class SyncState
 {
+    public ControlRecoveryState? ControlRecovery { get; set; }
     public PendingInstall? PendingInstall { get; set; }
     /// <summary>Legacy preference retained for downgrade compatibility. Current UI reports in the panel/website without balloons.</summary>
     public string SyncNotifications { get; set; } = "silent";
@@ -158,6 +159,7 @@ public sealed class StateStore(string folder, ISecretProtector protector)
 
     public void Unlink(SyncState state, string account)
     {
+        if(state.ControlRecovery is {} recovery&&recovery.Account==account){recovery.Enabled=false;recovery.Status="Account unlinked. Recovery is off; its local baseline is retained.";}
         state.Accounts.Remove(account);
         if (state.LastAccount == account) state.LastAccount = state.Accounts.Keys.FirstOrDefault();
     }

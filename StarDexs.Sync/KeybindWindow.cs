@@ -15,26 +15,40 @@ internal sealed class KeybindWindow : Window
     private readonly ComboBox _backups=new(){MinHeight=44,HorizontalAlignment=HorizontalAlignment.Stretch};
     private readonly CheckBox _automatic=new(){Content="Back up changed exports during sync",MinHeight=44};
     private readonly TextBlock _status=new(){TextWrapping=TextWrapping.Wrap};
+    private readonly TextBlock _recoveryStatus=new(){TextWrapping=TextWrapping.Wrap};
     private readonly List<Button> _buttons=[];
     private readonly SyncApi _api;private readonly StateStore _store;private readonly SemaphoreSlim _gate;private readonly Action<bool> _busy;private readonly CancellationToken _cancel;
     public KeybindWindow(SyncApi api,StateStore store,SemaphoreSlim gate,Action<bool> busy,CancellationToken cancel)
     {
         _api=api;_store=store;_gate=gate;_busy=busy;_cancel=cancel;
-        Title="Keybind backups";Width=500;MaxHeight=680;SizeToContent=SizeToContent.Height;CanResize=false;WindowStartupLocation=WindowStartupLocation.CenterScreen;
+        Title="Controls & backups";Width=500;Height=680;MaxHeight=680;FontSize=16;SizeToContent=SizeToContent.Manual;CanResize=false;WindowStartupLocation=WindowStartupLocation.CenterScreen;
         Background=Palette.Brush(Palette.Background);Foreground=Palette.Brush(Palette.Text);
         var state=store.Load();_accounts.ItemsSource=state.Accounts.Select(a=>new AccountChoice(a.Key,a.Value.Name)).ToList();
         _accounts.SelectedItem=(_accounts.ItemsSource as List<AccountChoice>)?.FirstOrDefault(a=>a.Id==state.LastAccount)??(_accounts.ItemsSource as List<AccountChoice>)?.FirstOrDefault();
         Button Action(string label,Func<Task> work){var button=new Button{Content=label,MinHeight=44,HorizontalAlignment=HorizontalAlignment.Stretch};button.Click+=async(_,_)=>await Run(work);_buttons.Add(button);return button;}
-        var content=new StackPanel{Margin=new Thickness(24),Spacing=16,Children={
-            new TextBlock{Text="Keybind backups",FontSize=24,FontWeight=FontWeight.SemiBold},
-            new TextBlock{Text="Export your controls in game first. These backups keep exported XML profiles; unsaved changes are not included.",TextWrapping=TextWrapping.Wrap},
-            new TextBlock{Text="Account"},_accounts,_automatic,
-            Action("Save automatic backup setting",SavePreference),Action("Back up exported profiles now",BackupNow),
+        var exports=new StackPanel{Spacing=16,Children={
+            new TextBlock{Text="Export your controls in game first. These cloud backups keep exported XML profiles; unsaved changes are not included.",TextWrapping=TextWrapping.Wrap},
+            _automatic,Action("Save automatic backup setting",SavePreference),Action("Back up exported profiles now",BackupNow),
             new TextBlock{Text="Saved revision"},_backups,Action("Refresh saved profiles",LoadBackups),Action("Restore selected profile",RestoreSelected),
-            new TextBlock{Text="Restoring requires a closed game and confirmation. Then import the restored profile in the game's Control Profiles menu. Joystick ordering is not changed.",TextWrapping=TextWrapping.Wrap},_status,
+            new TextBlock{Text="Restoring requires a closed game and confirmation. Then import the restored profile in the game's Control Profiles menu. Joystick ordering is not changed.",TextWrapping=TextWrapping.Wrap}
         }};
-        var close=new Button{Content="Close",MinHeight=44,HorizontalAlignment=HorizontalAlignment.Right};close.Click+=(_,_)=>Close();content.Children.Add(close);
-        Content=new ScrollViewer{Content=content,HorizontalScrollBarVisibility=Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled};
+        var recovery=new StackPanel{Spacing=16,Children={
+            new TextBlock{Text="Your current controls, joysticks included",FontWeight=FontWeight.SemiBold},
+            new TextBlock{Text="Saves a copy of the game's active controls file (actionmaps.xml) on this PC, outside the game folder. If a patch resets your bindings, close the game and restore it. No in-game import needed.",TextWrapping=TextWrapping.Wrap},
+            _recoveryStatus,Action("Back up my controls",EnableRecovery),
+            Action("Restore my controls",RestoreActive),Action("Undo the last restore",UndoActive),
+            new TextBlock{Text="Keep the same joysticks plugged in when you restore. Check your bindings in game afterward.",TextWrapping=TextWrapping.Wrap}
+        }};
+        TabItem Tab(string label,Control body)=>new(){Header=new TextBlock{Text=label,FontSize=16,Foreground=Palette.Brush(Palette.Text)},MinHeight=44,Padding=new Thickness(12,8),Content=new ScrollViewer{Content=body,HorizontalScrollBarVisibility=Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled}};
+        exports.Margin=new Thickness(0,0,12,0);recovery.Margin=new Thickness(0,0,12,0);
+        var tabs=new TabControl{ItemsSource=new[]{Tab("Exported profiles",exports),Tab("Current controls",recovery)}};
+        tabs.SelectionChanged+=(_,_)=>_status.Text="";
+        var heading=new StackPanel{Spacing=12,Children={new TextBlock{Text="Controls & backups",FontSize=24,FontWeight=FontWeight.SemiBold},new TextBlock{Text="Account"},_accounts}};
+        var close=new Button{Content="Close",MinHeight=44,HorizontalAlignment=HorizontalAlignment.Right};close.Click+=(_,_)=>Close();
+        var footer=new StackPanel{Spacing=12,Children={_status,close}};
+        var content=new Grid{Margin=new Thickness(24),RowDefinitions=new RowDefinitions("Auto,*,Auto")};
+        tabs.Margin=new Thickness(0,16);Grid.SetRow(heading,0);Grid.SetRow(tabs,1);Grid.SetRow(footer,2);content.Children.Add(heading);content.Children.Add(tabs);content.Children.Add(footer);
+        Content=new Border{Background=Palette.Brush(Palette.Background),Child=content};
         _accounts.SelectionChanged+=async(_,_)=>await Run(LoadBackups);Opened+=async(_,_)=>await Run(LoadBackups);
     }
     private (SyncState State,string Account,string Token,string Live) Current()
@@ -55,6 +69,41 @@ internal sealed class KeybindWindow : Window
         var current=Current();var status=await _api.StatusAsync(current.Token,_cancel);_automatic.IsChecked=status.KeybindBackup;
         var found=await _api.KeybindsAsync(current.Token,_cancel);_backups.ItemsSource=found.Select(b=>new BackupChoice(b)).ToArray();_backups.SelectedIndex=found.Count>0?0:-1;
         _status.Text=found.Count==0?"No backups yet. Export a profile in game, then back it up.":$"{found.Count} saved revisions. Only this account's profiles are listed.";
+        _recoveryStatus.Text=current.State.ControlRecovery is {} recovery?recovery.Account==current.Account?recovery.Status:"The backup on this PC belongs to a different linked account.":"No backup yet. Close the game, then choose Back up my controls.";
+    }
+    private async Task EnableRecovery()
+    {
+        var current=Current();
+
+        var hardware=await Task.Run(ControllerInventory.Read,_cancel)??throw new IOException("Connected devices could not be verified.");
+        var recovery=await Task.Run(()=>ActiveControlRecovery.Capture(current.Account,current.Live,hardware.Hash,DateTimeOffset.UtcNow,InstallWriter.GameIsRunning,current.State.ControlRecovery),_cancel);
+        // A joystick baseline needs an attached controller, not a disconnected/default device list.
+        if(hardware.Controllers==0&&ActiveControlRecovery.UsesJoystick(recovery.Data))throw new IOException("Plug in your joysticks before backing up, so the backup matches them.");
+        // Manual only, like the community guides: no automatic restore after patches.
+        recovery.Enabled=false;current.State.ControlRecovery=recovery;_store.Save(current.State);_recoveryStatus.Text=recovery.Status;_status.Text="Controls backed up.";
+    }
+    private Task DisableRecovery()
+    {
+        var current=Current();
+        if(current.State.ControlRecovery is {} recovery&&recovery.Account==current.Account){recovery.Enabled=false;recovery.Status="Automatic recovery is off. The local last-good baseline is kept.";_store.Save(current.State);_recoveryStatus.Text=recovery.Status;}
+        _status.Text="Automatic recovery is off.";
+        return Task.CompletedTask;
+    }
+    private async Task RestoreActive()
+    {
+        var current=Current();var recovery=current.State.ControlRecovery??throw new InvalidOperationException("Back up your controls first.");
+        if(!Dialogs.Ask("Restore your backed-up controls?\n\nThis replaces the game's current controls file. Your current one is kept so you can undo. The game must be closed.\n\nRestore now?")){_status.Text="Cancelled. No files were changed.";return;}
+        var hardware=await Task.Run(ControllerInventory.Read,_cancel);
+        var result=await Task.Run(()=>ActiveControlRecovery.RestoreNow(recovery,current.Account,current.Live,hardware?.Hash,true,InstallWriter.GameIsRunning),_cancel);
+        _store.Save(current.State);_recoveryStatus.Text=result.Message;_status.Text="Controls restored. Start the game and check your bindings.";
+    }
+    private async Task UndoActive()
+    {
+        var current=Current();var recovery=current.State.ControlRecovery??throw new InvalidOperationException("There's no restore to undo.");
+        if(!Dialogs.Ask("Undo the last restore?\n\nThis puts back the controls you had before restoring, if they haven't changed since. The game must be closed.\n\nUndo?")){_status.Text="Cancelled. No files were changed.";return;}
+        var hardware=await Task.Run(ControllerInventory.Read,_cancel);
+        var result=await Task.Run(()=>ActiveControlRecovery.Undo(recovery,current.Account,current.Live,hardware?.Hash,true,InstallWriter.GameIsRunning),_cancel);
+        _store.Save(current.State);_recoveryStatus.Text=result.Message;_status.Text="Restore undone.";
     }
     private async Task SavePreference()
     {

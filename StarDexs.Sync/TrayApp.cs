@@ -136,6 +136,7 @@ internal sealed class TrayApp : IPanelActions
         _clock = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         _clock.Tick += (_, _) => _ = RunDueAsync();
         _clock.Start();
+        _ = CheckControlRecoveryAsync();
         if (state.PendingInstall is not null) _ = FinishAfterGameClosesAsync(state.PendingInstall.Account);
     }
 
@@ -167,12 +168,31 @@ internal sealed class TrayApp : IPanelActions
         if (_busy || Interlocked.Exchange(ref _checkingDue, 1) != 0) return;
         try
         {
+            await CheckControlRecoveryAsync();
             if (_store.Load().PendingInstall is { } pending && !InstallWriter.GameIsRunning())
                 await RunAsync(() => _engine.ResumePendingAsync(_quit.Token), report => Show(report, pending.Account, false));
             var due = await Task.Run(() => _engine.DueAccounts(DateTimeOffset.UtcNow));
             foreach (var account in due) await SyncAsync(account, manual: false);
         }
         finally { Volatile.Write(ref _checkingDue, 0); }
+    }
+
+    private async Task CheckControlRecoveryAsync()
+    {
+        if(!await _gate.WaitAsync(0))return;
+        try
+        {
+            var state=_store.Load();
+            // Controls backup is manual for now; turn off automatic restore left on by an earlier test build.
+            if(state.ControlRecovery is {Enabled:true} old){old.Enabled=false;old.Status="Controls backed up. Restore them here if a patch resets them.";_store.Save(state);}
+            if(state.ControlRecovery is not {Enabled:true} recovery||state.GameFolder is not {} folder)return;
+            if(!state.Accounts.ContainsKey(recovery.Account)||_store.Token(state,recovery.Account) is null)return;
+            var result=await Task.Run(()=>ActiveControlRecovery.Tick(recovery,recovery.Account,folder,ControllerInventory.Read()?.Hash,DateTimeOffset.UtcNow,InstallWriter.GameIsRunning));
+            if(result.Changed)_store.Save(state);
+            if(result.Restored||result.NeedsAttention)Post(()=>{_status=result.Message;_look=result.Restored?SyncBar.Look.Hit:SyncBar.Look.Missed;Refresh();});
+        }
+        catch(Exception e)when(e is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException){Post(()=>{_status="Controls recovery needs attention: "+e.Message;_look=SyncBar.Look.Missed;Refresh();});}
+        finally{_gate.Release();}
     }
 
     /// <summary>Asks stardad.space for the schedule the player just saved for this PC; nothing is read or installed.</summary>
@@ -191,7 +211,11 @@ internal sealed class TrayApp : IPanelActions
     }
 
     /// <summary>Starts with Windows only while some linked account has an automatic sync on.</summary>
-    private void ApplyAutoStart() => AutoStart.Set(_store.Load().Accounts.Values.Any(account => account.Schedule is { IsOn: true }));
+    private void ApplyAutoStart()
+    {
+        var state=_store.Load();
+        AutoStart.Set(state.Accounts.Values.Any(account=>account.Schedule is {IsOn:true})||state.ControlRecovery is {Enabled:true} recovery&&state.Accounts.ContainsKey(recovery.Account));
+    }
 
     // ---- noticing a game update, on this PC only ------------------------------------------------------------
 
@@ -558,7 +582,7 @@ internal sealed class TrayApp : IPanelActions
     void IPanelActions.OpenSite() => Open(SyncApi.DefaultSite);
     void IPanelActions.Keybinds()
     {
-        var window=new KeybindWindow(_api,_store,_gate,value=>{_busy=value;Refresh();},_quit.Token);window.Show();
+        var window=new KeybindWindow(_api,_store,_gate,value=>{_busy=value;if(!value)ApplyAutoStart();Refresh();},_quit.Token);window.Show();
     }
     void IPanelActions.ChangeFolder() => Ask(() => { if (ChooseFolder(null)) Post(WatchForGameUpdates); });
     void IPanelActions.ReplaceUnknown() => Ask(() => ReplaceUnknown(_unknownAccount));
@@ -586,7 +610,7 @@ internal sealed class TrayApp : IPanelActions
         if (!quiet) SetStatus("Checking for updates…");
         Release? found = null;
         try { found = await _updater.NewestAsync(Version.Parse(_version), _quit.Token); }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) { if (!quiet) SetStatus("Couldn't reach the StarDad website. Try again in a moment."); return; }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidDataException) { if (!quiet) Post(()=>{_look=SyncBar.Look.Missed;_status=exception is InvalidDataException?exception.Message:"Couldn't reach the StarDad website. Try again in a moment.";Refresh();}); return; }
         Post(() =>
         {
             _release = found;
@@ -602,21 +626,27 @@ internal sealed class TrayApp : IPanelActions
     /// <summary>Downloads the signed release, swaps it in, and starts it; this copy then closes.</summary>
     private async Task UpdateAsync()
     {
-        if (_release is not { } release || Environment.ProcessPath is not { } exe || _busy) return;
-        _busy = true;
-        SetStatus($"Updating to {release.Version.ToString(3)}…");
-        var problem = await _updater.InstallAsync(release, exe, _quit.Token);
-        if (problem is not null)
+        if(Environment.ProcessPath is not {} exe||_busy||!await _gate.WaitAsync(0))return;
+        _busy=true;_look=SyncBar.Look.Running;_share=0;SetStatus("Checking the latest signed update…");
+        try
         {
-            Post(() => { _busy = false; _status = problem; Refresh(); });
-            return;
+            var result=await _updater.InstallNewestAsync(Version.Parse(_version),exe,
+                release=>SetStatus($"Updating to {release.Version.ToString(3)}…"),_quit.Token);
+            if(!result.Installed)
+            {
+                Post(()=>{_release=result.Release;_look=result.Problem is null?SyncBar.Look.Hit:SyncBar.Look.Missed;
+                    _status=result.Problem??$"You have the newest StarDad Companion ({_version}).";Refresh();});
+                return;
+            }
+            Post(()=>
+            {
+                try{Process.Start(new ProcessStartInfo(exe,"--updated"){UseShellExecute=false})?.Dispose();}
+                catch(Win32Exception){_status="Updated. Start StarDad Companion again to use it.";Refresh();return;}
+                ((IPanelActions)this).Quit();
+            });
         }
-        Post(() =>
-        {
-            try { Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = false })?.Dispose(); }
-            catch (Win32Exception) { _busy = false; _status = "Updated. Start StarDad Companion again to use it."; Refresh(); return; }
-            ((IPanelActions)this).Quit();
-        });
+        catch(OperationCanceledException){if(!_quit.IsCancellationRequested)Post(()=>{_look=SyncBar.Look.Missed;_status="The update check timed out. The installed app was kept; try again shortly.";Refresh();});}
+        finally{_gate.Release();Post(()=>{_busy=false;Refresh();});}
     }
 
     void IPanelActions.Quit()

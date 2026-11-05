@@ -11,6 +11,7 @@ public static class KeybindFiles
     public const int MaxBytes=1024*1024;
     public static string Folder(string live)=>Path.Combine(live,"USER","Client","0","Controls","Mappings");
     public static bool ValidName(string name)=>name.Length<=140&&Regex.IsMatch(name,@"\Alayout_[a-zA-Z0-9 _.\-]+_exported\.xml\z",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant);
+    public static bool HasBindingInput(string? value)=>!string.IsNullOrWhiteSpace(value)&&!Regex.IsMatch(value,@"\A[a-zA-Z]+[0-9]+_\s*\z",RegexOptions.CultureInvariant);
     public static void Validate(string name,byte[] data)
     {
         if(!ValidName(name)||data.Length is 0 or >MaxBytes)throw new InvalidDataException("Choose a populated exported control profile of up to 1 MiB.");
@@ -18,7 +19,7 @@ public static class KeybindFiles
         {
             using var source=new MemoryStream(data);using var reader=XmlReader.Create(source,new XmlReaderSettings{DtdProcessing=DtdProcessing.Prohibit,XmlResolver=null,MaxCharactersInDocument=MaxBytes});
             var xml=XDocument.Load(reader);
-            if(xml.Root?.Name!="ActionMaps"||!xml.Descendants("actionmap").Any()||!xml.Descendants("rebind").Any())throw new InvalidDataException("This is not a populated exported control profile.");
+            if(xml.Root?.Name!="ActionMaps"||xml.Root.Element("ActionProfiles") is not null||!xml.Root.Elements("actionmap").Any()||!xml.Root.Elements("actionmap").Descendants("rebind").Any(e=>HasBindingInput((string?)e.Attribute("input"))))throw new InvalidDataException("This is not a populated exported control profile.");
         }
         catch(XmlException){throw new InvalidDataException("This profile is invalid XML or contains a prohibited document definition.");}
     }

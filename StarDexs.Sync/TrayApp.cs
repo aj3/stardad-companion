@@ -369,7 +369,7 @@ internal sealed class TrayApp : IPanelActions
             return false;
         }
         Open(start.LinkPage);
-        SetStatus($"Waiting for you to approve code {start.Code} on the StarDad website…");
+        SetStatus($"Type code {start.Code} on the StarDad website page that just opened…");
         while (!_quit.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(3)))
         {
             LinkReady? ready;

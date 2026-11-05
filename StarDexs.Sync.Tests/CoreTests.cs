@@ -89,6 +89,25 @@ public class UserCfgTests
 public class GameFolderTests
 {
     [Fact]
+    public void Folder_access_refuses_a_junction_inside_the_game_folder()
+    {
+        var root = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            var live = Path.Combine(root, "LIVE");
+            var elsewhere = Directory.CreateDirectory(Path.Combine(root, "elsewhere")).FullName;
+            Directory.CreateDirectory(Path.Combine(live, "data"));
+            var junction = Path.Combine(live, "data", "Localization");
+            using (var mk = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{junction}\" \"{elsewhere}\"") { CreateNoWindow = true, UseShellExecute = false })!) mk.WaitForExit();
+            Assert.Throws<IOException>(() => FolderAccess.RefuseLinks(live, Path.Combine(junction, "english")));
+            Directory.Delete(junction);
+            Directory.CreateDirectory(Path.Combine(junction, "english"));
+            FolderAccess.RefuseLinks(live, Path.Combine(junction, "english"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void Finds_the_newest_install_in_the_launcher_log()
     {
         var text = """

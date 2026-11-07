@@ -17,6 +17,7 @@ internal sealed class KeybindWindow : Window
     private readonly TextBlock _status=new(){TextWrapping=TextWrapping.Wrap};
     private readonly TextBlock _recoveryStatus=new(){TextWrapping=TextWrapping.Wrap};
     private readonly List<Button> _buttons=[];
+    private Button? _restoreSelected,_restoreActive,_undoActive;
     private readonly SyncApi _api;private readonly StateStore _store;private readonly SemaphoreSlim _gate;private readonly Action<bool> _busy;private readonly CancellationToken _cancel;
     public KeybindWindow(SyncApi api,StateStore store,SemaphoreSlim gate,Action<bool> busy,CancellationToken cancel)
     {
@@ -28,20 +29,21 @@ internal sealed class KeybindWindow : Window
         Button Action(string label,Func<Task> work){var button=new Button{Content=label,MinHeight=44,HorizontalAlignment=HorizontalAlignment.Stretch};button.Click+=async(_,_)=>await Run(work);_buttons.Add(button);return button;}
         var exports=new StackPanel{Spacing=16,Children={
             new TextBlock{Text="Export your controls in game first. These cloud backups keep exported XML profiles; unsaved changes are not included.",TextWrapping=TextWrapping.Wrap},
-            _automatic,Action("Save automatic backup setting",SavePreference),Action("Back up exported profiles now",BackupNow),
-            new TextBlock{Text="Saved revision"},_backups,Action("Refresh saved profiles",LoadBackups),Action("Restore selected profile",RestoreSelected),
+            _automatic,Action("Back up exported profiles now",BackupNow),
+            new TextBlock{Text="Saved revision"},_backups,Action("Refresh saved profiles",LoadBackups),(_restoreSelected=Action("Restore selected profile",RestoreSelected)),
             new TextBlock{Text="Restoring requires a closed game and confirmation. Then import the restored profile in the game's Control Profiles menu. Joystick ordering is not changed.",TextWrapping=TextWrapping.Wrap}
         }};
         var recovery=new StackPanel{Spacing=16,Children={
             new TextBlock{Text="Your current controls, joysticks included",FontWeight=FontWeight.SemiBold},
             new TextBlock{Text="Saves a copy of the game's active controls file (actionmaps.xml) on this PC, outside the game folder. If a patch resets your bindings, close the game and restore it. No in-game import needed.",TextWrapping=TextWrapping.Wrap},
             _recoveryStatus,Action("Back up my controls",EnableRecovery),
-            Action("Restore my controls",RestoreActive),Action("Undo the last restore",UndoActive),
+            (_restoreActive=Action("Restore my controls",RestoreActive)),(_undoActive=Action("Undo the last restore",UndoActive)),
             new TextBlock{Text="Keep the same joysticks plugged in when you restore. Check your bindings in game afterward.",TextWrapping=TextWrapping.Wrap}
         }};
         TabItem Tab(string label,Control body)=>new(){Header=new TextBlock{Text=label,FontSize=16,Foreground=Palette.Brush(Palette.Text)},MinHeight=44,Padding=new Thickness(12,8),Content=new ScrollViewer{Content=body,HorizontalScrollBarVisibility=Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled}};
         exports.Margin=new Thickness(0,0,12,0);recovery.Margin=new Thickness(0,0,12,0);
         var tabs=new TabControl{ItemsSource=new[]{Tab("Exported profiles",exports),Tab("Current controls",recovery)}};
+        _automatic.Click+=async(_,_)=>await Run(SavePreference);
         tabs.SelectionChanged+=(_,_)=>_status.Text="";
         var heading=new StackPanel{Spacing=12,Children={new TextBlock{Text="Controls & backups",FontSize=24,FontWeight=FontWeight.SemiBold},new TextBlock{Text="Account"},_accounts}};
         var close=new Button{Content="Close",MinHeight=44,HorizontalAlignment=HorizontalAlignment.Right};close.Click+=(_,_)=>Close();
@@ -59,10 +61,19 @@ internal sealed class KeybindWindow : Window
     private async Task Run(Func<Task> action)
     {
         if(!await _gate.WaitAsync(0)){_status.Text="A sync is running. Try again when it finishes.";return;}
-        _accounts.IsEnabled=false;_buttons.ForEach(b=>b.IsEnabled=false);_busy(true);_status.Text="Working…";
+        _accounts.IsEnabled=false;_automatic.IsEnabled=false;_buttons.ForEach(b=>b.IsEnabled=false);_busy(true);_status.Text="Working…";
         try{await action();}
         catch(Exception e)when(e is IOException or HttpRequestException or UnauthorizedAccessException or InvalidOperationException or NotLinkedException or OperationCanceledException){_status.Text=e is NotLinkedException?"This account is no longer linked. Link it again to access backups.":e.Message;}
-        finally{_gate.Release();_busy(false);_accounts.IsEnabled=true;_buttons.ForEach(b=>b.IsEnabled=true);}
+        finally{_gate.Release();_busy(false);_accounts.IsEnabled=true;_automatic.IsEnabled=true;_buttons.ForEach(b=>b.IsEnabled=true);UpdateActions();}
+    }
+    // Restore and undo only when there is something to restore or undo.
+    private void UpdateActions()
+    {
+        if(_restoreSelected is not null)_restoreSelected.IsEnabled=_backups.SelectedItem is not null;
+        var state=_store.Load();var id=(_accounts.SelectedItem as AccountChoice)?.Id;
+        var mine=state.ControlRecovery is {} recovery&&recovery.Account==id?recovery:null;
+        if(_restoreActive is not null)_restoreActive.IsEnabled=mine is not null;
+        if(_undoActive is not null)_undoActive.IsEnabled=mine?.PreviousSha256 is not null;
     }
     private async Task LoadBackups()
     {
@@ -107,7 +118,9 @@ internal sealed class KeybindWindow : Window
     }
     private async Task SavePreference()
     {
-        var current=Current();var enabled=_automatic.IsChecked==true;await _api.SetKeybindBackupAsync(current.Token,enabled,_cancel);
+        var current=Current();var enabled=_automatic.IsChecked==true;
+        // Saved as soon as it is ticked; if the save fails, the box goes back to what is actually saved.
+        try{await _api.SetKeybindBackupAsync(current.Token,enabled,_cancel);}catch{_automatic.IsChecked=!enabled;throw;}
         current.State.Accounts[current.Account].BackupKeybinds=enabled;_store.Save(current.State);_status.Text=enabled?"Changed exports will be backed up during syncs.":"Automatic keybind backup is off. Saved backups are retained.";
     }
     private async Task BackupNow()

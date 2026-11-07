@@ -42,7 +42,7 @@ internal sealed class TrayPanel : Window
     private const double PanelWidth = 320;
     // Segoe icon font glyphs.
     private const string Globe = "", Folder = "", Link = "", Undo = "", Remove = "",
-        Refresh = "", Unlinked = "", Down = "", Up = "", Shield = "", Download = "";
+        Refresh = "", Unlinked = "", Down = "", Up = "", Shield = "", Download = "", Keyboard = "";
 
     private readonly IPanelActions _actions;
     private readonly SyncBar _badge = new() { VerticalAlignment = VerticalAlignment.Top };
@@ -359,10 +359,10 @@ internal sealed class TrayPanel : Window
         if(_view is not {} view || _settingsOpen)return;
         var content=new StackPanel { Spacing=4 };var window=OptionsWindow("StarDad Settings",content);SettingsWindow=window;
         Button Setting(string icon,string label,Action action,bool enabled=true)=>Row(icon,label,()=>{window.Close();Hide();action();},enabled,closes:false);
-        content.Children.Add(Setting(Folder,"Game Folder",_actions.ChangeFolder,!view.Busy));
-        content.Children.Add(Row(Undo,"Restore Backup",()=>OpenRestore(window),view.HasFolder&&view.HasInstalled&&!view.Busy,closes:false));
-        content.Children.Add(Setting(Undo,"Keybind backups",_actions.Keybinds,view.Accounts.Count>0&&!view.Busy));
-        content.Children.Add(Setting(Link,"Link Another Account",_actions.Link,!view.Busy));
+        content.Children.Add(Setting(Folder,"Game folder",_actions.ChangeFolder,!view.Busy));
+        content.Children.Add(Row(Undo,"Restore or remove the file",()=>OpenRestore(window),view.HasFolder&&view.HasInstalled&&!view.Busy,closes:false));
+        content.Children.Add(Setting(Keyboard,"Controls & backups",_actions.Keybinds,view.Accounts.Count>0&&!view.Busy));
+        content.Children.Add(Setting(Link,"Link another account",_actions.Link,!view.Busy));
         foreach(var (id,name,_) in view.Accounts)content.Children.Add(Setting(Unlinked,$"Unlink {name}",()=>_actions.Unlink(id),!view.Busy));
         _settingsOpen=true;
         try { await window.ShowDialog(this); } finally { _settingsOpen=false;SettingsWindow=null; }
@@ -370,10 +370,10 @@ internal sealed class TrayPanel : Window
 
     private async void OpenRestore(Window owner)
     {
-        var content=new StackPanel { Spacing=8 };var window=OptionsWindow("Restore Backup",content);RestoreWindow=window;
+        var content=new StackPanel { Spacing=8 };var window=OptionsWindow("Restore or remove the file",content);RestoreWindow=window;
         content.Children.Add(Small("Restore your previous global.ini, or remove StarDad's installed text configuration. Your game logs and keybinds are kept.",Palette.Soft));
-        content.Children.Add(Row(Undo,"Restore previous backup",()=>{window.Close();owner.Close();Hide();_actions.PutBackPrevious();},closes:false));
-        content.Children.Add(Row(Remove,"Delete StarDad configuration",()=>{window.Close();owner.Close();Hide();_actions.RemoveFile();},closes:false));
+        content.Children.Add(Row(Undo,"Restore the previous file",()=>{window.Close();owner.Close();Hide();_actions.PutBackPrevious();},closes:false));
+        content.Children.Add(Row(Remove,"Remove the StarDad file",()=>{window.Close();owner.Close();Hide();_actions.RemoveFile();},closes:false));
         try { await window.ShowDialog(owner); } finally { RestoreWindow=null; }
     }
 

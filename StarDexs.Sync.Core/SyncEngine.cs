@@ -154,7 +154,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
                     }
                 }
                 catch(Exception e)when(e is IOException or UnauthorizedAccessException or HttpRequestException)
-                {keybindNote=" Keybind backup needs attention. Existing cloud backups are kept; review Keybind backups in Settings.";}
+                {keybindNote=" Keybind backup needs attention. Existing cloud backups are kept; review Controls & backups in Settings.";}
             }
             SyncReport Report(string message, bool installed = false, bool permission = false, bool waiting = false, bool unknown = false) =>
                 new(message+keybindNote, installed, permission, false, waiting, unknown, blueprints, completed, status.HelperLatest);

@@ -51,15 +51,29 @@ internal sealed class CompanionApp(TrayApp? tray) : Application
         Resources["ButtonBorderBrush"] = Brushes.Transparent;
         Resources["ButtonBorderBrushPointerOver"] = Brushes.Transparent;
         Resources["ButtonBorderBrushPressed"] = Brushes.Transparent;
-        Resources["ButtonBackgroundDisabled"] = Brushes.Transparent;
+        // A disabled button keeps a faint shape, so "Sync" mid-sync still reads as a button, not stray text.
+        Resources["ButtonBackgroundDisabled"] = Palette.Tint(Palette.Text, 0.05);
         Resources["ButtonBorderBrushDisabled"] = Brushes.Transparent;
         Resources["ButtonForegroundDisabled"] = Palette.Brush(Palette.Faint);
+
+        // Every button's words sit in its middle; Fluent left them high once MinHeight made a button taller than its
+        // text. Menu rows still set their own left alignment.
+        Styles.Add(new Style(x => x.OfType<Button>())
+        {
+            Setters =
+            {
+                new Setter(Avalonia.Layout.Layoutable.VerticalAlignmentProperty, Avalonia.Layout.VerticalAlignment.Center),
+                new Setter(ContentControl.VerticalContentAlignmentProperty, Avalonia.Layout.VerticalAlignment.Center),
+                new Setter(ContentControl.HorizontalContentAlignmentProperty, Avalonia.Layout.HorizontalAlignment.Center),
+            },
+        });
 
         // "primary": the one main action, tinted teal, a little stronger on hover.
         Styles.Add(Presenter("primary", ":pointerover", Palette.Tint(Palette.Accent, 0.32), Palette.Accent));
         Styles.Add(Presenter("primary", ":pressed", Palette.Tint(Palette.Accent, 0.42), Palette.Accent));
         // "row": menu items, flat until the pointer is on them.
         Styles.Add(Presenter("row", ":pointerover", Palette.Brush(Palette.Hover), Palette.Text));
+        Styles.Add(Presenter("row", ":disabled", Brushes.Transparent, Palette.Faint));
     }
 
     /// <summary>A style for a class of button in one state (Fluent colours the template's presenter, not the button).</summary>

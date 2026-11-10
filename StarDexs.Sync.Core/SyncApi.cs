@@ -11,7 +11,14 @@ public sealed record LinkReady(string Token, string Account, string Name);
 /// <param name="Account">Which account the token belongs to (its public id).</param>
 /// <param name="HelperLatest">The newest StarDad Companion version on the StarDad website, so the app can mention an update.</param>
 /// <summary>A check-in's answer: sync now (pressed on the website), and the PC's current schedule.</summary>
-public sealed record CheckIn(bool SyncNow, SyncSchedule? Schedule);
+public sealed record CheckIn(bool SyncNow, SyncSchedule? Schedule, PcSettings? Settings = null, string? Latest = null, PcAction? Action = null);
+/// <summary>The settings that belong to the whole PC, and when they were last changed (on the website or in the app).</summary>
+public sealed record PcSettings(bool AutoUpdate, bool StartWithWindows, DateTimeOffset? ChangedAt);
+/// <summary>Something the player asked for on the website for this PC: put the previous file back, remove StarDad, or restore a keybind profile.</summary>
+public sealed record PcAction(string Id, string Kind, string? Keybind)
+{
+    public const string RestorePrevious = "restore-previous", Remove = "remove", RestoreKeybind = "restore-keybind";
+}
 
 public sealed record SyncStatus(string? Patch, string Settings, bool HasSettings, string? Account = null, string? HelperLatest = null, SyncSchedule? Schedule = null, bool KeybindBackup = false);
 public sealed record KeybindCopy(string Id,string Name,string Source,string Created,string Sha256);
@@ -76,8 +83,40 @@ public sealed class SyncApi(HttpClient http)
     public async Task<CheckIn> CheckInAsync(string token, CancellationToken cancel)
     {
         var body = await PostAsync("api/sync/checkin", new JsonObject(), token, cancel);
-        return new CheckIn(body?["sync"] is JsonValue sync && sync.TryGetValue<bool>(out var asked) && asked, Schedule(body?["schedule"]));
+        return new CheckIn(body?["sync"] is JsonValue sync && sync.TryGetValue<bool>(out var asked) && asked, Schedule(body?["schedule"]),
+            Settings(body?["settings"]), null, Action(body?["action"]));
     }
+
+    private static PcSettings? Settings(JsonNode? node)
+    {
+        if (node is not JsonObject settings) return null;
+        bool Flag(string name) => settings[name] is not JsonValue value || !value.TryGetValue<bool>(out var on) || on;
+        var changed = settings["changed_at"] is JsonValue at && at.TryGetValue<string>(out var text) && DateTimeOffset.TryParse(text, out var when) ? when : (DateTimeOffset?)null;
+        return new PcSettings(Flag("auto_update"), Flag("start_with_windows"), changed);
+    }
+
+    /// <summary>A website action, only in the shapes this app knows; anything else is ignored.</summary>
+    private static PcAction? Action(JsonNode? node)
+    {
+        if (node is not JsonObject action || OptionalText(action, "id") is not { } id || !System.Text.RegularExpressions.Regex.IsMatch(id, "^[0-9a-f]{32}$")) return null;
+        var kind = OptionalText(action, "kind");
+        var keybind = OptionalText(action, "keybind");
+        return kind switch
+        {
+            PcAction.RestorePrevious or PcAction.Remove => new PcAction(id, kind, null),
+            PcAction.RestoreKeybind when keybind is { Length: > 0 and <= 64 } && System.Text.RegularExpressions.Regex.IsMatch(keybind, "^[A-Za-z0-9-]+$") => new PcAction(id, kind, keybind),
+            _ => null,
+        };
+    }
+
+    /// <summary>Tells the website this PC's own settings after the player changed them in the app.</summary>
+    public async Task ReportSettingsAsync(string token, PcSettings settings, CancellationToken cancel) =>
+        await PostAsync("api/sync/settings", new JsonObject { ["auto_update"] = settings.AutoUpdate, ["start_with_windows"] = settings.StartWithWindows,
+            ["changed_at"] = (settings.ChangedAt ?? DateTimeOffset.UtcNow).ToString("O") }, token, cancel);
+
+    /// <summary>How a website action went, so its PC card can say.</summary>
+    public async Task ReportActionAsync(string token, string id, bool ok, string message, CancellationToken cancel) =>
+        await PostAsync("api/sync/action", new JsonObject { ["id"] = id, ["ok"] = ok, ["message"] = message[..Math.Min(message.Length, 300)] }, token, cancel);
 
     /// <summary>The automatic syncs the player chose for this PC; null when off or not understood.</summary>
     private static SyncSchedule? Schedule(JsonNode? node)

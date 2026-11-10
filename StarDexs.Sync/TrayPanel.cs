@@ -11,7 +11,7 @@ namespace StarDexs.Sync;
 internal sealed record PanelView(
     string Status, SyncBar.Look Look, double Share, string? LastSync,
     IReadOnlyList<(string Id, string Name, string? Schedule)> Accounts, bool HasFolder, bool InstallAgreed, bool NeedsAccess, bool HasInstalled, bool Busy,
-    string? UpdateTo = null, bool UnknownFile = false);
+    string? UpdateTo = null, bool UnknownFile = false, bool AutoUpdate = true, bool StartWithWindows = true);
 
 /// <summary>What the panel's buttons do; the tray app does it.</summary>
 internal interface IPanelActions
@@ -30,6 +30,8 @@ internal interface IPanelActions
     void Update();
     void Quit();
     void ReplaceUnknown();
+    /// <summary>The PC's own settings changed in Settings; also kept on the website's card for this PC.</summary>
+    void SetPcSettings(bool autoUpdate, bool startWithWindows) { }
 }
 
 /// <summary>
@@ -359,6 +361,13 @@ internal sealed class TrayPanel : Window
         if(_view is not {} view || _settingsOpen)return;
         var content=new StackPanel { Spacing=4 };var window=OptionsWindow("StarDad Settings",content);SettingsWindow=window;
         Button Setting(string icon,string label,Action action,bool enabled=true)=>Row(icon,label,()=>{window.Close();Hide();action();},enabled,closes:false);
+        // This PC's own settings, the same two the website shows on its card.
+        var autoUpdate=new CheckBox { Content="Update automatically", IsChecked=view.AutoUpdate, MinHeight=36 };
+        var startUp=new CheckBox { Content="Start with Windows", IsChecked=view.StartWithWindows, MinHeight=36 };
+        void Changed(object? _, Avalonia.Interactivity.RoutedEventArgs __)=>_actions.SetPcSettings(autoUpdate.IsChecked==true,startUp.IsChecked==true);
+        autoUpdate.IsCheckedChanged+=Changed;startUp.IsCheckedChanged+=Changed;
+        content.Children.Add(autoUpdate);content.Children.Add(startUp);
+        content.Children.Add(Small("Updates are checked at each sync and installed only when signed by StarDad. You can change these on the website too.",Palette.Soft));
         content.Children.Add(Setting(Folder,"Game folder",_actions.ChangeFolder,!view.Busy));
         content.Children.Add(Row(Undo,"Restore or remove the file",()=>OpenRestore(window),view.HasFolder&&view.HasInstalled&&!view.Busy,closes:false));
         content.Children.Add(Setting(Keyboard,"Controls & backups",_actions.Keybinds,view.Accounts.Count>0&&!view.Busy));

@@ -23,6 +23,8 @@ public sealed class InstallWriter(string dataFolder, Func<bool>? gameRunning = n
     public const int MaxFileBytes = 64 * 1024 * 1024;
     public const int JournalLinesKept = 200;
     private readonly Func<bool> _gameRunning = gameRunning ?? GameIsRunning;
+    /// <summary>Whether the game is running now (this PC's process list only).</summary>
+    public bool GameRunning => _gameRunning();
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
     public string JournalPath => Path.Combine(dataFolder, "journal.log");

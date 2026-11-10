@@ -172,10 +172,17 @@ internal sealed class TrayApp : IPanelActions
             if (_store.Load().PendingInstall is { } pending && !InstallWriter.GameIsRunning())
                 await RunAsync(() => _engine.ResumePendingAsync(_quit.Token), report => Show(report, pending.Account, false));
             // The website's "Sync now" counts as the player asking, so it reports like a manual sync.
-            var asked = await _engine.CheckInAsync(_quit.Token);
-            foreach (var account in asked) await SyncAsync(account, manual: true);
+            var outcome = await _engine.CheckInAsync(_quit.Token);
+            Post(ApplyAutoStart);
+            // Actions the player confirmed on the website: carried out while the game is closed, like in the app.
+            foreach (var (account, action) in outcome.Actions)
+            {
+                if (InstallWriter.GameIsRunning()) break;
+                await RunAsync(async () => await _engine.RunActionAsync(account, action, _quit.Token) ?? new SyncReport("Nothing to do."), report => Show(report, account, manual: true));
+            }
+            foreach (var account in outcome.Asked) await SyncAsync(account, manual: true);
             var due = await Task.Run(() => _engine.DueAccounts(DateTimeOffset.UtcNow));
-            foreach (var account in due.Except(asked)) await SyncAsync(account, manual: false);
+            foreach (var account in due.Except(outcome.Asked)) await SyncAsync(account, manual: false);
         }
         finally { Volatile.Write(ref _checkingDue, 0); }
     }
@@ -213,11 +220,11 @@ internal sealed class TrayApp : IPanelActions
         });
     }
 
-    /// <summary>Starts with Windows only while some linked account has an automatic sync on.</summary>
+    /// <summary>Starts with Windows while it's linked to an account and the player hasn't turned that off (here or on the website).</summary>
     private void ApplyAutoStart()
     {
         var state=_store.Load();
-        AutoStart.Set(state.Accounts.Values.Any(account=>account.Schedule is {IsOn:true})||state.ControlRecovery is {Enabled:true} recovery&&state.Accounts.ContainsKey(recovery.Account));
+        AutoStart.Set(state.StartWithWindows&&state.Accounts.Count>0);
     }
 
     // ---- noticing a game update, on this PC only ------------------------------------------------------------
@@ -353,11 +360,13 @@ internal sealed class TrayApp : IPanelActions
         // Problems remain visible in the panel and website. A background sync
         // never opens a modal, starts account linking, or asks for elevation.
         Refresh();
-        if (!_toldUpdate && report.HelperLatest is { } latest && Version.TryParse(latest, out var newest)
+        // Each sync also checks for a newer release: installed straight away when updating by itself is on,
+        // otherwise offered in the panel.
+        if (report.HelperLatest is { } latest && Version.TryParse(latest, out var newest)
             && Version.TryParse(_version, out var mine) && newest > mine)
         {
-            _toldUpdate = true;
-            _ = FindUpdateAsync(quiet: true);
+            if (_store.Load().AutoUpdate) _ = UpdateWhenFreeAsync();
+            else if (!_toldUpdate) { _toldUpdate = true; _ = FindUpdateAsync(quiet: true); }
         }
     }
 
@@ -554,7 +563,8 @@ internal sealed class TrayApp : IPanelActions
         var accounts = state.Accounts.OrderBy(a => a.Value.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(a => (a.Key, a.Value.Name, a.Value.Schedule is { IsOn: true } schedule ? "Auto: " + schedule.Describe() : (string?)null)).ToList();
         return new PanelView(_status, _look, _share, _lastSync, accounts, GameFolder.IsLive(state.GameFolder),
-            state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy, _release?.Version.ToString(3), _unknownFile);
+            state.InstallAgreed, _needsAccess, state.InstalledSha is not null, _busy, _release?.Version.ToString(3), _unknownFile,
+            state.AutoUpdate, state.StartWithWindows);
     }
 
     private unsafe void ShowPanel(bool fromTray = false)
@@ -574,6 +584,11 @@ internal sealed class TrayApp : IPanelActions
 
     // What the panel's buttons do.
     void IPanelActions.Sync(string account) => _ = SyncAsync(account, manual: true);
+    void IPanelActions.SetPcSettings(bool autoUpdate, bool startWithWindows) => _ = Task.Run(async () =>
+    {
+        await _engine.ChangeSettingsAsync(autoUpdate, startWithWindows, _quit.Token);
+        Post(() => { ApplyAutoStart(); Refresh(); });
+    });
     void IPanelActions.Unlink(string account) => Ask(() => UnlinkAccount(account));
     void IPanelActions.Link()
     {
@@ -624,6 +639,16 @@ internal sealed class TrayApp : IPanelActions
             else if (!quiet) _status = $"You have the newest StarDad Companion ({_version}).";
             Refresh();
         });
+    }
+
+    /// <summary>Updates by itself once the sync that found the release has finished.</summary>
+    private async Task UpdateWhenFreeAsync()
+    {
+        for (var tries = 0; _busy && tries < 60; tries++)
+        {
+            try { await Task.Delay(TimeSpan.FromSeconds(2), _quit.Token); } catch (OperationCanceledException) { return; }
+        }
+        if (!_busy) await UpdateAsync();
     }
 
     /// <summary>Downloads the signed release, swaps it in, and starts it; this copy then closes.</summary>

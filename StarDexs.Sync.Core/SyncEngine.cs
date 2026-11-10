@@ -1,6 +1,9 @@
 namespace StarDexs.Sync.Core;
 
 /// <summary>What one pass did, for the tray's tooltip and notifications.</summary>
+/// <summary>What a check-in brought: "Sync now" requests, the newest release, and website actions to carry out.</summary>
+public sealed record CheckInOutcome(IReadOnlyList<string> Asked, string? Latest, IReadOnlyList<(string Account, PcAction Action)> Actions);
+
 public sealed record SyncReport(
     string Message, bool Installed = false, bool NeedsPermission = false, bool NotLinked = false, bool WaitingForGame = false,
     bool UnknownFile = false, int NewBlueprints = 0, int NewCompleted = 0, string? HelperLatest = null,
@@ -420,10 +423,12 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     /// whose player pressed "Sync now" on the website. Quiet when the website can't be reached; an unlinked account
     /// is skipped and handled by the next sync.
     /// </summary>
-    public async Task<IReadOnlyList<string>> CheckInAsync(CancellationToken cancel)
+    public async Task<CheckInOutcome> CheckInAsync(CancellationToken cancel)
     {
         var state = store.Load();
         var asked = new List<string>();
+        var actions = new List<(string Account, PcAction Action)>();
+        string? latest = null;
         var changed = false;
         foreach (var (account, linked) in state.Accounts)
         {
@@ -433,9 +438,68 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
             catch (Exception e) when (e is HttpRequestException or TaskCanceledException or NotLinkedException) { continue; }
             if (linked.Schedule != answer.Schedule) { TakeSchedule(linked, answer.Schedule); changed = true; }
             if (answer.SyncNow) asked.Add(account);
+            // The PC's own settings: the newer change wins, whether it was made on the website or in the app.
+            if (answer.Settings is { ChangedAt: { } at } settings && (state.SettingsChangedAt is not { } mine || at > mine)
+                && (settings.AutoUpdate != state.AutoUpdate || settings.StartWithWindows != state.StartWithWindows || state.SettingsChangedAt != at))
+            {
+                state.AutoUpdate = settings.AutoUpdate; state.StartWithWindows = settings.StartWithWindows; state.SettingsChangedAt = at; changed = true;
+            }
+            latest ??= answer.Latest;
+            if (answer.Action is { } action && action.Id != state.LastActionId) actions.Add((account, action));
         }
         if (changed) store.Save(state);
-        return asked;
+        return new CheckInOutcome(asked, latest, actions);
+    }
+
+    /// <summary>
+    /// Carries out something the player asked for on the website (and confirmed there), with the same checks as in
+    /// the app: it waits while the game runs, keeps backups, and never touches files beyond its own. Null while it has
+    /// to wait; otherwise the result, which is also reported to that PC's card on the website.
+    /// </summary>
+    public async Task<SyncReport?> RunActionAsync(string account, PcAction action, CancellationToken cancel)
+    {
+        var state = store.Load();
+        if (action.Id == state.LastActionId || store.Token(state, account) is not { } token) return null;
+        if (writer.GameRunning) return null;
+        SyncReport report;
+        switch (action.Kind)
+        {
+            case PcAction.RestorePrevious: report = await PutBackPreviousAsync(cancel); break;
+            case PcAction.Remove: report = Remove(); break;
+            case PcAction.RestoreKeybind when action.Keybind is { } id && GameFolder.IsLive(state.GameFolder):
+                try
+                {
+                    var profile = await api.DownloadKeybindAsync(token, id, cancel);
+                    KeybindFiles.Restore(state.GameFolder!, profile.Name, profile.Data, profile.Sha256, consent: true, () => writer.GameRunning);
+                    report = new SyncReport($"Restored {profile.Name}. Load it in the game's Control Profiles menu.", Completed: true);
+                }
+                catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or HttpRequestException or InvalidOperationException)
+                { report = new SyncReport("Couldn't restore that profile: " + e.Message); }
+                break;
+            default: report = new SyncReport("This PC's StarDad Companion couldn't do that; update it and try again."); break;
+        }
+        if (report.WaitingForGame) return null;
+        state = store.Load();
+        state.LastActionId = action.Id;
+        store.Save(state);
+        try { await api.ReportActionAsync(token, action.Id, Succeeded(report), report.Message, cancel); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or NotLinkedException) { }
+        return report;
+    }
+
+    /// <summary>The player changed this PC's settings in the app: keep them, and tell every linked account's website card.</summary>
+    public async Task ChangeSettingsAsync(bool autoUpdate, bool startWithWindows, CancellationToken cancel)
+    {
+        var state = store.Load();
+        state.AutoUpdate = autoUpdate; state.StartWithWindows = startWithWindows; state.SettingsChangedAt = DateTimeOffset.UtcNow;
+        store.Save(state);
+        var settings = new PcSettings(autoUpdate, startWithWindows, state.SettingsChangedAt);
+        foreach (var account in state.Accounts.Keys)
+        {
+            if (store.Token(state, account) is not { } token) continue;
+            try { await api.ReportSettingsAsync(token, settings, cancel); }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or NotLinkedException) { }
+        }
     }
 
     /// <summary>Linked accounts whose timed sync is due now, by the schedule each player chose.</summary>

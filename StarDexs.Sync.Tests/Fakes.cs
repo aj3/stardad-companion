@@ -60,6 +60,11 @@ public sealed class FakeSite : HttpMessageHandler
     /// <summary>Profiles the account holds, by fingerprint; and the last keybind counts reported.</summary>
     public Dictionary<string, string> Keybinds { get; } = new(StringComparer.OrdinalIgnoreCase);
     public string? KeybindChecked { get; set; }
+    /// <summary>What the check-in hands over: this PC's settings and a website action (JSON, or "null").</summary>
+    public string CheckInSettings { get; set; } = "null";
+    public string CheckInAction { get; set; } = "null";
+    public List<string> ActionReports { get; } = [];
+    public List<string> SettingsReports { get; } = [];
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
     {
@@ -75,6 +80,8 @@ public sealed class FakeSite : HttpMessageHandler
             "/api/sync/keybinds" when request.Method == HttpMethod.Get => Json("{\"backups\":[" + string.Join(",", Keybinds.Select((k, i) => $$"""{"id":"k{{i}}","name":"{{k.Value}}","sourceName":"PC","created":"2026-11-10","sha256":"{{k.Key}}"}""")) + "]}"),
             "/api/sync/keybinds" => KeepKeybind(body),
             "/api/sync/keybinds/checked" => Checked(body),
+            "/api/sync/action" => Record(ActionReports, body),
+            "/api/sync/settings" => Record(SettingsReports, body),
             "/api/sync/blueprints" => Json($$"""{"added":{{Keep(Owned, System.Text.Json.Nodes.JsonNode.Parse(body)!["owned"]!.AsArray().Select(b => b!["name"]!.GetValue<string>()))}}}"""),
             "/api/sync/completed" => Json($$"""{"added":{{Keep(Completed, System.Text.Json.Nodes.JsonNode.Parse(body)!["completed"]!.AsObject().Select(c => c.Key))}}}"""),
             "/api/sync/file/previous" => Previous is null ? new HttpResponseMessage(HttpStatusCode.NotFound) : FileResponse(Previous, "4.10.1-live.1"),
@@ -90,7 +97,7 @@ public sealed class FakeSite : HttpMessageHandler
     {
         var asked = SyncRequested;
         SyncRequested = false;
-        return Json($$"""{"sync":{{(asked ? "true" : "false")}},"schedule":{{Schedule}}}""");
+        return Json($$"""{"sync":{{(asked ? "true" : "false")}},"schedule":{{Schedule}},"settings":{{CheckInSettings}},"action":{{CheckInAction}}}""");
     }
 
     private HttpResponseMessage KeepKeybind(string body)
@@ -102,6 +109,7 @@ public sealed class FakeSite : HttpMessageHandler
     }
 
     private HttpResponseMessage Checked(string body) { KeybindChecked = body; return Json("{}"); }
+    private static HttpResponseMessage Record(List<string> into, string body) { into.Add(body); return Json("{}"); }
 
     private static int Keep(HashSet<string> into, IEnumerable<string> items) => items.Count(into.Add);
 

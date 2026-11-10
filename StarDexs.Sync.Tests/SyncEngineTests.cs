@@ -6,6 +6,45 @@ namespace StarDexs.Sync.Tests;
 
 public class SyncEngineTests
 {
+    [Fact]
+    public async Task The_newer_settings_win_and_app_changes_reach_the_website()
+    {
+        using var setup = new Setup();
+        setup.Site.CheckInSettings = """{"auto_update":false,"start_with_windows":false,"changed_at":"2026-11-10T12:00:00Z"}""";
+        await setup.Engine.CheckInAsync(CancellationToken.None);
+        var state = setup.Store.Load();
+        Assert.False(state.AutoUpdate); Assert.False(state.StartWithWindows);
+
+        await setup.Engine.ChangeSettingsAsync(true, false, CancellationToken.None);
+        Assert.Contains("\"auto_update\":true", Assert.Single(setup.Site.SettingsReports));
+        // An older website value no longer overrides the app's newer change.
+        await setup.Engine.CheckInAsync(CancellationToken.None);
+        Assert.True(setup.Store.Load().AutoUpdate);
+    }
+
+    [Fact]
+    public async Task A_website_action_runs_once_waits_for_the_game_and_reports_back()
+    {
+        using var setup = new Setup();
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.True(File.Exists(GameFolder.GlobalIniPath(setup.Install.Live)));
+        setup.Site.CheckInAction = """{"id":"0123456789abcdef0123456789abcdef","kind":"remove"}""";
+        var action = Assert.Single((await setup.Engine.CheckInAsync(CancellationToken.None)).Actions);
+
+        setup.GameRunning = true;
+        Assert.Null(await setup.Engine.RunActionAsync(action.Account, action.Action, CancellationToken.None));
+        Assert.True(File.Exists(GameFolder.GlobalIniPath(setup.Install.Live)));
+
+        setup.GameRunning = false;
+        Assert.NotNull(await setup.Engine.RunActionAsync(action.Account, action.Action, CancellationToken.None));
+        Assert.False(File.Exists(GameFolder.GlobalIniPath(setup.Install.Live)));
+        Assert.Contains("0123456789abcdef0123456789abcdef", Assert.Single(setup.Site.ActionReports));
+        // The same action at the next check-in isn't done again.
+        Assert.Empty((await setup.Engine.CheckInAsync(CancellationToken.None)).Actions);
+        setup.Site.CheckInAction = """{"id":"not-an-id","kind":"remove"}""";
+        Assert.Empty((await setup.Engine.CheckInAsync(CancellationToken.None)).Actions);
+    }
+
     private static byte[] Profile(int button) => Encoding.UTF8.GetBytes($"<ActionMaps><actionmap name='spaceship_general'><action name='v_flight_ready'><rebind input='js1_button{button}'/></action></actionmap></ActionMaps>");
     private static void Export(FakeInstall install, string name, byte[] data)
     {
@@ -222,9 +261,9 @@ public class SyncEngineTests
         setup.Site.SyncRequested = true;
         setup.Site.Schedule = """{"every_hours":6,"at_minute":null,"on_game_update":false}""";
 
-        Assert.Equal([One], await setup.Engine.CheckInAsync(CancellationToken.None));
+        Assert.Equal([One], (await setup.Engine.CheckInAsync(CancellationToken.None)).Asked);
         Assert.Equal(new SyncSchedule(6, null, false), setup.Store.Load().Accounts[One].Schedule);
-        Assert.Empty(await setup.Engine.CheckInAsync(CancellationToken.None));
+        Assert.Empty((await setup.Engine.CheckInAsync(CancellationToken.None)).Asked);
         var checkIn = setup.Site.Requests.First(r => r.Path == "/api/sync/checkin");
         Assert.Equal("t-123", checkIn.Auth);
         Assert.Equal("{}", checkIn.Body);
@@ -234,9 +273,9 @@ public class SyncEngineTests
     public async Task Check_in_is_quiet_when_the_site_is_unreachable_or_the_pc_was_unlinked()
     {
         using var setup = new Setup();
-        Assert.Empty(await setup.EngineFor(new Unreachable()).CheckInAsync(CancellationToken.None));
+        Assert.Empty((await setup.EngineFor(new Unreachable()).CheckInAsync(CancellationToken.None)).Asked);
         setup.Site.Unlinked = true;
-        Assert.Empty(await setup.Engine.CheckInAsync(CancellationToken.None));
+        Assert.Empty((await setup.Engine.CheckInAsync(CancellationToken.None)).Asked);
         Assert.NotNull(setup.Store.Load().Accounts[One]);
     }
 

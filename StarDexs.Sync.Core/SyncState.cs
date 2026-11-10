@@ -78,6 +78,14 @@ public sealed class SyncState
     public PendingInstall? PendingInstall { get; set; }
     /// <summary>Legacy preference retained for downgrade compatibility. Current UI reports in the panel/website without balloons.</summary>
     public string SyncNotifications { get; set; } = "silent";
+    /// <summary>Installs a signed newer release by itself (on unless the player turns it off, here or on the website).</summary>
+    public bool AutoUpdate { get; set; } = true;
+    /// <summary>Starts quietly when the player signs in to Windows (on unless turned off).</summary>
+    public bool StartWithWindows { get; set; } = true;
+    /// <summary>When those two were last changed, here or on the website; the newer change wins.</summary>
+    public DateTimeOffset? SettingsChangedAt { get; set; }
+    /// <summary>The last website action this PC carried out, so a repeat check-in doesn't do it twice.</summary>
+    public string? LastActionId { get; set; }
     /// <summary>
     /// 3 since logs are kept as what they held (not how far they were read). A version 2 file carries over:
     /// its read positions are dropped and every log is read once more. Anything older starts fresh.

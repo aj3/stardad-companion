@@ -70,8 +70,9 @@ Windows backend is included.
 
 ## Automatic and manual syncs
 
-It doesn't listen on a network port or update itself without you pressing
-**Update**.
+It doesn't listen on a network port. With **Update automatically** on (the
+default), it installs a signed newer release it finds at a sync; off, it waits
+for you to press **Update**.
 Nobody else can make it do anything, not even stardad.space's own staff: the
 website has no way to reach your PC. The app only talks to stardad.space when
 you press **Send to my PC** (or **Sync** in its menu), or on the default three-hour schedule or at the times you choose
@@ -186,8 +187,15 @@ unlink the PC from either side: the website's account page, or the app's menu.
 
 ## Updates
 
-When a sync, or **Check for updates** in the panel, finds a newer release, the
-panel offers **Update to x.y.z**. The update happens only when you press it.
+Each sync, and **Check for updates** in the panel, looks for a newer release.
+With **Update automatically** on (the default) it installs it straight away;
+off, the panel offers **Update to x.y.z** and it updates only when you press it.
+Both that switch and **Start with Windows** are in Settings and on the PC's card
+on the website (the newer change wins).
+
+The website can also leave a request for this PC: put the previous file back,
+remove StarDad from the game, or restore a keybind profile. The app picks it up
+at its next check-in, does it once the game is closed, and reports how it went.
 
 Each release is signed with StarDad' release key (ECDSA P-256), on the
 maintainer's PC; the private key never goes anywhere else. The public half is

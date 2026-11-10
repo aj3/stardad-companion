@@ -141,21 +141,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
             var status = await api.StatusAsync(token, cancel);
             TakeSchedule(state.Accounts[account!], status.Schedule);
             state.Accounts[account!].BackupKeybinds=status.KeybindBackup;
-            var keybindNote="";
-            if(status.KeybindBackup)
-            {
-                try
-                {
-                    foreach(var name in KeybindFiles.Exports(state.GameFolder!))
-                    {
-                        var data=KeybindFiles.Read(state.GameFolder!,name);var hash=KeybindFiles.Hash(data);var key=Path.Combine(Path.GetFullPath(state.GameFolder!),name);
-                        if(state.Accounts[account!].KeybindHashes.GetValueOrDefault(key)==hash)continue;
-                        await api.UploadKeybindAsync(token,name,data,status.Patch,cancel);state.Accounts[account!].KeybindHashes[key]=hash;
-                    }
-                }
-                catch(Exception e)when(e is IOException or UnauthorizedAccessException or HttpRequestException)
-                {keybindNote=" Keybind backup needs attention. Existing cloud backups are kept; review Controls & backups in Settings.";}
-            }
+            var keybindNote=status.KeybindBackup?await BackUpKeybindsAsync(state,account!,token,status.Patch,cancel):"";
             SyncReport Report(string message, bool installed = false, bool permission = false, bool waiting = false, bool unknown = false) =>
                 new(message+keybindNote, installed, permission, false, waiting, unknown, blueprints, completed, status.HelperLatest);
 
@@ -327,6 +313,42 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     /// account comes back. Only logs that are new or changed since the last sync are read again.
     /// Returns how many the account didn't have yet.
     /// </summary>
+    /// <summary>
+    /// Backs up exported control profiles the account doesn't hold yet (compared by fingerprint with the
+    /// website's list, so a backup deleted there is sent again). A profile that isn't a populated export, such
+    /// as one a patch emptied, is skipped and counted rather than stopping the sync. The counts go to the
+    /// website so its Keybind backups page can say what this PC found.
+    /// </summary>
+    private async Task<string> BackUpKeybindsAsync(SyncState state, string account, string token, string? patch, CancellationToken cancel)
+    {
+        int found = 0, sent = 0, skipped = 0; string? problem = null;
+        try
+        {
+            var names = KeybindFiles.Exports(state.GameFolder!);
+            found = names.Count;
+            var held = names.Count == 0 ? new HashSet<string>() : (await api.KeybindsAsync(token, cancel)).Select(k => k.Sha256).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in names)
+            {
+                byte[] data;
+                try { data = KeybindFiles.Read(state.GameFolder!, name); }
+                catch (InvalidDataException) { skipped++; continue; }
+                var hash = KeybindFiles.Hash(data); var key = Path.Combine(Path.GetFullPath(state.GameFolder!), name);
+                if (!held.Contains(hash)) { await api.UploadKeybindAsync(token, name, data, patch, cancel); sent++; }
+                state.Accounts[account].KeybindHashes[key] = hash;
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or HttpRequestException) { problem = e.Message; }
+        try { await api.KeybindCheckedAsync(token, found, sent, skipped, problem, cancel); }
+        catch (HttpRequestException) { /* An older website doesn't take the counts; the backups themselves are unaffected. */ }
+        if (problem is not null) return " Keybind backup needs attention. Existing cloud backups are kept; review Controls & backups in Settings.";
+        return (sent, skipped) switch
+        {
+            (> 0, _) => $" Backed up {sent} control profile{(sent == 1 ? "" : "s")}.",
+            (_, > 0) => $" Skipped {skipped} control profile{(skipped == 1 ? "" : "s")} that wasn't a saved export.",
+            _ => "",
+        };
+    }
+
     private async Task<(int Blueprints, int Completed)> SendLogsAsync(SyncState state, string token, Func<Task> sending, CancellationToken cancel)
     {
         var findings = new LogFindings();

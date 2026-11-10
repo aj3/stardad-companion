@@ -171,6 +171,9 @@ public sealed class SyncApi(HttpClient http)
         KeybindFiles.Validate(name,bytes);var result=await PostAsync("api/sync/keybinds",new JsonObject{["name"]=name,["data"]=Convert.ToBase64String(bytes),["patch"]=patch},token,cancel);
         return result?["added"] is JsonValue added&&added.TryGetValue<bool>(out var value)&&value;
     }
+    /// <summary>What this sync's keybind pass found: exported profiles seen, sent, skipped, and any problem.</summary>
+    public async Task KeybindCheckedAsync(string token,int found,int sent,int skipped,string? problem,CancellationToken cancel)=>
+        await PostAsync("api/sync/keybinds/checked",new JsonObject{["found"]=found,["sent"]=sent,["skipped"]=skipped,["problem"]=problem is null?null:problem[..Math.Min(problem.Length,200)]},token,cancel);
     public async Task SetKeybindBackupAsync(string token,bool enabled,CancellationToken cancel)=>
         await PostAsync("api/sync/keybinds/preference",new JsonObject{["enabled"]=enabled},token,cancel);
     public async Task<KeybindDownload> DownloadKeybindAsync(string token,string id,CancellationToken cancel)

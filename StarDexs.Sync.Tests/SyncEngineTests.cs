@@ -6,6 +6,46 @@ namespace StarDexs.Sync.Tests;
 
 public class SyncEngineTests
 {
+    private static byte[] Profile(int button) => Encoding.UTF8.GetBytes($"<ActionMaps><actionmap name='spaceship_general'><action name='v_flight_ready'><rebind input='js1_button{button}'/></action></actionmap></ActionMaps>");
+    private static void Export(FakeInstall install, string name, byte[] data)
+    {
+        var folder = KeybindFiles.Folder(install.Live); Directory.CreateDirectory(folder); File.WriteAllBytes(Path.Combine(folder, name), data);
+    }
+
+    [Fact]
+    public async Task A_sync_backs_up_new_exports_once_skips_bad_ones_and_reports_what_it_found()
+    {
+        using var setup = new Setup(); setup.Site.KeybindBackup = true;
+        Export(setup.Install, "layout_main_exported.xml", Profile(1));
+        Export(setup.Install, "layout_reset_exported.xml", Encoding.UTF8.GetBytes("<ActionMaps/>"));
+        var first = await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Single(setup.Site.Keybinds);
+        Assert.Contains("Backed up 1 control profile.", first.Message);
+        Assert.Contains("\"found\":2", setup.Site.KeybindChecked); Assert.Contains("\"sent\":1", setup.Site.KeybindChecked); Assert.Contains("\"skipped\":1", setup.Site.KeybindChecked);
+
+        setup.Site.Requests.Clear();
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.DoesNotContain(setup.Site.Requests, r => r.Path == "/api/sync/keybinds" && r.Body.Length > 0);
+
+        // Deleted on the website: sent again even though this PC sent it before.
+        setup.Site.Keybinds.Clear();
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Single(setup.Site.Keybinds);
+    }
+
+    [Fact]
+    public async Task No_exports_is_reported_as_found_none_and_backup_off_sends_nothing()
+    {
+        using var setup = new Setup(); setup.Site.KeybindBackup = true;
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Contains("\"found\":0", setup.Site.KeybindChecked);
+
+        setup.Site.KeybindBackup = false; setup.Site.KeybindChecked = null;
+        Export(setup.Install, "layout_main_exported.xml", Profile(2));
+        await setup.Engine.RunAsync(One, CancellationToken.None);
+        Assert.Null(setup.Site.KeybindChecked); Assert.Empty(setup.Site.Keybinds);
+    }
+
     [Fact]
     public async Task Unfinished_customizer_draft_syncs_logs_but_never_installs()
     {

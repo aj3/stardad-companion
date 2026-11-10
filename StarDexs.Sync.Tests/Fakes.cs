@@ -56,6 +56,10 @@ public sealed class FakeSite : HttpMessageHandler
     public string Schedule { get; set; } = "null";
     /// <summary>The website's "Sync now", handed over once at the next check-in.</summary>
     public bool SyncRequested { get; set; }
+    public bool KeybindBackup { get; set; }
+    /// <summary>Profiles the account holds, by fingerprint; and the last keybind counts reported.</summary>
+    public Dictionary<string, string> Keybinds { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public string? KeybindChecked { get; set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
     {
@@ -67,7 +71,10 @@ public sealed class FakeSite : HttpMessageHandler
         if (Unlinked && path.StartsWith("/api/sync/", StringComparison.Ordinal) && !path.Contains("/link/")) return new(HttpStatusCode.Unauthorized);
         return path switch
         {
-            "/api/sync/status" => Json($$"""{"patch":{{(Patch is null ? "null" : $"\"{Patch}\"")}},"settings":"{{Settings}}","has_settings":{{(HasSettings ? "true" : "false")}},"account":"aaaaaaaaaaaaaaaa","helper_latest":"0.2.0","schedule":{{Schedule}}}"""),
+            "/api/sync/status" => Json($$"""{"patch":{{(Patch is null ? "null" : $"\"{Patch}\"")}},"settings":"{{Settings}}","has_settings":{{(HasSettings ? "true" : "false")}},"account":"aaaaaaaaaaaaaaaa","helper_latest":"0.2.0","schedule":{{Schedule}},"keybind_backup":{{(KeybindBackup ? "true" : "false")}}}"""),
+            "/api/sync/keybinds" when request.Method == HttpMethod.Get => Json("{\"backups\":[" + string.Join(",", Keybinds.Select((k, i) => $$"""{"id":"k{{i}}","name":"{{k.Value}}","sourceName":"PC","created":"2026-11-10","sha256":"{{k.Key}}"}""")) + "]}"),
+            "/api/sync/keybinds" => KeepKeybind(body),
+            "/api/sync/keybinds/checked" => Checked(body),
             "/api/sync/blueprints" => Json($$"""{"added":{{Keep(Owned, System.Text.Json.Nodes.JsonNode.Parse(body)!["owned"]!.AsArray().Select(b => b!["name"]!.GetValue<string>()))}}}"""),
             "/api/sync/completed" => Json($$"""{"added":{{Keep(Completed, System.Text.Json.Nodes.JsonNode.Parse(body)!["completed"]!.AsObject().Select(c => c.Key))}}}"""),
             "/api/sync/file/previous" => Previous is null ? new HttpResponseMessage(HttpStatusCode.NotFound) : FileResponse(Previous, "4.10.1-live.1"),
@@ -85,6 +92,16 @@ public sealed class FakeSite : HttpMessageHandler
         SyncRequested = false;
         return Json($$"""{"sync":{{(asked ? "true" : "false")}},"schedule":{{Schedule}}}""");
     }
+
+    private HttpResponseMessage KeepKeybind(string body)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(body)!;
+        var hash = KeybindFiles.Hash(Convert.FromBase64String(node["data"]!.GetValue<string>()));
+        var added = Keybinds.TryAdd(hash, node["name"]!.GetValue<string>());
+        return Json($$"""{"id":"x","added":{{(added ? "true" : "false")}}}""");
+    }
+
+    private HttpResponseMessage Checked(string body) { KeybindChecked = body; return Json("{}"); }
 
     private static int Keep(HashSet<string> into, IEnumerable<string> items) => items.Count(into.Add);
 

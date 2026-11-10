@@ -393,6 +393,29 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         }
     }
 
+    /// <summary>
+    /// Checks in with stardad.space for every linked account: keeps each schedule current and returns the accounts
+    /// whose player pressed "Sync now" on the website. Quiet when the website can't be reached; an unlinked account
+    /// is skipped and handled by the next sync.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> CheckInAsync(CancellationToken cancel)
+    {
+        var state = store.Load();
+        var asked = new List<string>();
+        var changed = false;
+        foreach (var (account, linked) in state.Accounts)
+        {
+            if (store.Token(state, account) is not { } token) continue;
+            CheckIn answer;
+            try { answer = await api.CheckInAsync(token, cancel); }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or NotLinkedException) { continue; }
+            if (linked.Schedule != answer.Schedule) { TakeSchedule(linked, answer.Schedule); changed = true; }
+            if (answer.SyncNow) asked.Add(account);
+        }
+        if (changed) store.Save(state);
+        return asked;
+    }
+
     /// <summary>Linked accounts whose timed sync is due now, by the schedule each player chose.</summary>
     public IReadOnlyList<string> DueAccounts(DateTimeOffset now)
     {

@@ -171,8 +171,11 @@ internal sealed class TrayApp : IPanelActions
             await CheckControlRecoveryAsync();
             if (_store.Load().PendingInstall is { } pending && !InstallWriter.GameIsRunning())
                 await RunAsync(() => _engine.ResumePendingAsync(_quit.Token), report => Show(report, pending.Account, false));
+            // The website's "Sync now" counts as the player asking, so it reports like a manual sync.
+            var asked = await _engine.CheckInAsync(_quit.Token);
+            foreach (var account in asked) await SyncAsync(account, manual: true);
             var due = await Task.Run(() => _engine.DueAccounts(DateTimeOffset.UtcNow));
-            foreach (var account in due) await SyncAsync(account, manual: false);
+            foreach (var account in due.Except(asked)) await SyncAsync(account, manual: false);
         }
         finally { Volatile.Write(ref _checkingDue, 0); }
     }

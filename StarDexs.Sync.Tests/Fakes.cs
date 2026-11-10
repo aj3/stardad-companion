@@ -54,6 +54,8 @@ public sealed class FakeSite : HttpMessageHandler
     public HashSet<string> Completed { get; } = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>The "schedule" JSON the status call returns (null: none).</summary>
     public string Schedule { get; set; } = "null";
+    /// <summary>The website's "Sync now", handed over once at the next check-in.</summary>
+    public bool SyncRequested { get; set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
     {
@@ -70,10 +72,18 @@ public sealed class FakeSite : HttpMessageHandler
             "/api/sync/completed" => Json($$"""{"added":{{Keep(Completed, System.Text.Json.Nodes.JsonNode.Parse(body)!["completed"]!.AsObject().Select(c => c.Key))}}}"""),
             "/api/sync/file/previous" => Previous is null ? new HttpResponseMessage(HttpStatusCode.NotFound) : FileResponse(Previous, "4.10.1-live.1"),
             "/api/sync/file" => FileResponse(File, Patch!),
+            "/api/sync/checkin" => CheckIn(),
             "/api/sync/link/start" => Json("""{"code":"ABCD-1234","poll":"p1","link":"/link?code=ABCD-1234"}"""),
             "/api/sync/link/poll" => Json("""{"status":"ready","token":"t-123","account":"aaaaaaaaaaaaaaaa","name":"Pilot One"}"""),
             _ => Json("{}"),
         };
+    }
+
+    private HttpResponseMessage CheckIn()
+    {
+        var asked = SyncRequested;
+        SyncRequested = false;
+        return Json($$"""{"sync":{{(asked ? "true" : "false")}},"schedule":{{Schedule}}}""");
     }
 
     private static int Keep(HashSet<string> into, IEnumerable<string> items) => items.Count(into.Add);

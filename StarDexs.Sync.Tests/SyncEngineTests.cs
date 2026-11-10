@@ -176,6 +176,31 @@ public class SyncEngineTests
     }
 
     [Fact]
+    public async Task Check_in_hands_over_sync_now_once_and_keeps_the_schedule_current()
+    {
+        using var setup = new Setup();
+        setup.Site.SyncRequested = true;
+        setup.Site.Schedule = """{"every_hours":6,"at_minute":null,"on_game_update":false}""";
+
+        Assert.Equal([One], await setup.Engine.CheckInAsync(CancellationToken.None));
+        Assert.Equal(new SyncSchedule(6, null, false), setup.Store.Load().Accounts[One].Schedule);
+        Assert.Empty(await setup.Engine.CheckInAsync(CancellationToken.None));
+        var checkIn = setup.Site.Requests.First(r => r.Path == "/api/sync/checkin");
+        Assert.Equal("t-123", checkIn.Auth);
+        Assert.Equal("{}", checkIn.Body);
+    }
+
+    [Fact]
+    public async Task Check_in_is_quiet_when_the_site_is_unreachable_or_the_pc_was_unlinked()
+    {
+        using var setup = new Setup();
+        Assert.Empty(await setup.EngineFor(new Unreachable()).CheckInAsync(CancellationToken.None));
+        setup.Site.Unlinked = true;
+        Assert.Empty(await setup.Engine.CheckInAsync(CancellationToken.None));
+        Assert.NotNull(setup.Store.Load().Accounts[One]);
+    }
+
+    [Fact]
     public async Task Sends_log_findings_and_installs_the_file()
     {
         using var setup = new Setup();

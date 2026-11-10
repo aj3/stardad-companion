@@ -10,6 +10,9 @@ public sealed record LinkStart(string Code, string Poll, Uri LinkPage);
 public sealed record LinkReady(string Token, string Account, string Name);
 /// <param name="Account">Which account the token belongs to (its public id).</param>
 /// <param name="HelperLatest">The newest StarDad Companion version on the StarDad website, so the app can mention an update.</param>
+/// <summary>A check-in's answer: sync now (pressed on the website), and the PC's current schedule.</summary>
+public sealed record CheckIn(bool SyncNow, SyncSchedule? Schedule);
+
 public sealed record SyncStatus(string? Patch, string Settings, bool HasSettings, string? Account = null, string? HelperLatest = null, SyncSchedule? Schedule = null, bool KeybindBackup = false);
 public sealed record KeybindCopy(string Id,string Name,string Source,string Created,string Sha256);
 public sealed record KeybindDownload(string Name,byte[] Data,string Sha256);
@@ -64,6 +67,16 @@ public sealed class SyncApi(HttpClient http)
         var body = await SendJsonAsync(request, token, cancel);
         return new SyncStatus(OptionalText(body, "patch"), Text(body, "settings"), body?["has_settings"] is JsonValue flag && flag.TryGetValue<bool>(out var has) && has,
             OptionalText(body, "account"), OptionalText(body, "helper_latest"), Schedule(body?["schedule"]), body?["keybind_backup"] is JsonValue backup && backup.TryGetValue<bool>(out var enabled) && enabled);
+    }
+
+    /// <summary>
+    /// The minute check-in while the app runs: tells stardad.space this PC is on, and returns whether "Sync now" was
+    /// pressed on the website, and the schedule the player chose. Sends only the link token, nothing about the PC.
+    /// </summary>
+    public async Task<CheckIn> CheckInAsync(string token, CancellationToken cancel)
+    {
+        var body = await PostAsync("api/sync/checkin", new JsonObject(), token, cancel);
+        return new CheckIn(body?["sync"] is JsonValue sync && sync.TryGetValue<bool>(out var asked) && asked, Schedule(body?["schedule"]));
     }
 
     /// <summary>The automatic syncs the player chose for this PC; null when off or not understood.</summary>

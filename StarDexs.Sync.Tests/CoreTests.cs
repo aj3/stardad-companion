@@ -37,6 +37,19 @@ public class LogReaderTests
         Assert.Equal(15, found.Blueprints["Arclight Pistol"].FirstSeen.Day);
     }
 
+    [Theory]
+    [InlineData("<t> Executable: C:\\Program Files\\Roberts Space Industries\\StarCitizen\\LIVE\\Bin64\\StarCitizen.exe", "LIVE")]
+    [InlineData("<t> Executable: G:\\RSI\\StarCitizen\\PTU\\Bin64\\StarCitizen.exe", "PTU")]
+    [InlineData("<t> Executable: D:/Games/StarCitizen/eptu/Bin64/StarCitizen.exe", "EPTU")]
+    [InlineData("<t> Something else entirely", null)]
+    public void A_log_says_which_game_channel_wrote_it(string header, string? channel)
+    {
+        using var install = new FakeInstall();
+        var log = Path.Combine(install.Live, "Game.log");
+        File.WriteAllText(log, "<t> Log started\n" + header + "\n" + Blueprint + "\n");
+        Assert.Equal(channel, LogReader.Channel(log));
+    }
+
     [Fact]
     public void Reads_on_from_where_it_stopped_and_leaves_a_half_line()
     {

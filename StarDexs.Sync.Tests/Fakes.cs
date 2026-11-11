@@ -17,11 +17,13 @@ public sealed class FakeInstall : IDisposable
         File.WriteAllBytes(Path.Combine(Live, "Data.p4k"), [0]);
     }
 
-    public void Log(string name, string text)
+    /// <summary>A game log; it names the LIVE game unless another channel (or none) is given, as real logs do.</summary>
+    public void Log(string name, string text, string? channel = "LIVE")
     {
         var path = Path.Combine(Live, name);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, text);
+        var header = channel is null || !name.EndsWith(".log", StringComparison.OrdinalIgnoreCase) ? "" : $"<2026-04-02T10:00:00.000Z> Executable: C:\\Program Files\\Roberts Space Industries\\StarCitizen\\{channel}\\Bin64\\StarCitizen.exe\n";
+        File.WriteAllText(path, header + text);
     }
 
     public void Dispose()

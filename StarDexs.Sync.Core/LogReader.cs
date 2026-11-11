@@ -43,6 +43,34 @@ public static partial class LogReader
     [GeneratedRegex("""Added notification "Contract Complete:\s*(.*?):\s*" \[\d+\].*?MissionId: \[([0-9a-fA-F-]{36})\]""")]
     private static partial Regex CompletedLine();
 
+    // Every log starts by naming the game it came from: "Executable: ...\StarCitizen\LIVE\Bin64\StarCitizen.exe".
+    [GeneratedRegex("""Executable:\s*.*[\\/]StarCitizen[\\/]([A-Za-z-]{2,20})[\\/]Bin64[\\/]StarCitizen\.exe""", RegexOptions.IgnoreCase)]
+    private static partial Regex ExecutableLine();
+
+    /// <summary>
+    /// The channels whose progress is kept: LIVE, and HOTFIX, whose progress carries over to LIVE.
+    /// What happens on PTU, EPTU and other test builds doesn't, so their logs never count.
+    /// </summary>
+    public static readonly IReadOnlySet<string> LiveChannels = new HashSet<string>(["LIVE", "HOTFIX"], StringComparer.Ordinal);
+
+    /// <summary>
+    /// The game channel a log came from (LIVE, PTU, EPTU...), from the executable it names near its start;
+    /// null when the log doesn't say. Reads at most the first 256 KB.
+    /// </summary>
+    public static string? Channel(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var budget = 256 * 1024;
+        for (var line = reader.ReadLine(); line is not null && budget > 0; line = reader.ReadLine())
+        {
+            budget -= line.Length + 1;
+            if (line.Contains("Executable:", StringComparison.Ordinal) && ExecutableLine().Match(line) is { Success: true } found)
+                return found.Groups[1].Value.ToUpperInvariant();
+        }
+        return null;
+    }
+
     /// <summary>Looks at one line; adds what it finds.</summary>
     public static void ReadLine(string line, LogFindings into)
     {

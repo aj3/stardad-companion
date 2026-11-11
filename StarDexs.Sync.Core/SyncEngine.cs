@@ -364,10 +364,13 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
             {
                 if (!state.Logs.TryGetValue(file.Name, out var known) || !known.Matches(file))
                 {
+                    // A log from PTU or another test build (or one that doesn't say) adds nothing: progress
+                    // there doesn't carry over to LIVE, so it must never reach a StarDad account. HOTFIX does.
+                    var channel = LogReader.Channel(log);
                     var found = new LogFindings();
-                    LogReader.ReadFrom(log, 0, found, Checkpoint);
+                    if (channel is not null && LogReader.LiveChannels.Contains(channel)) LogReader.ReadFrom(log, 0, found, Checkpoint);
                     file.Refresh();
-                    known = LogFile.From(file, found);
+                    known = LogFile.From(file, found, channel);
                 }
                 logs[file.Name] = known;
                 known.AddTo(findings);

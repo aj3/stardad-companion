@@ -94,6 +94,45 @@ public class SyncEngineTests
         Assert.DoesNotContain(setup.Site.Requests, r => r.Path == "/api/sync/file");
     }
     [Fact]
+    public async Task Logs_from_PTU_or_that_name_no_game_never_reach_the_account()
+    {
+        using var setup = new Setup();
+        setup.Install.Log("Game.log", Blueprint + "\n", channel: "PTU");
+        setup.Install.Log("logbackups/old.log", Blueprint.Replace("Arclight Pistol", "Unnamed Rifle") + "\n", channel: null);
+        var report = await setup.Engine.RunAsync(One, CancellationToken.None, prepareOnly: true);
+        Assert.Equal(0, report.NewBlueprints);
+        Assert.DoesNotContain(setup.Site.Requests, r => r.Path == "/api/sync/blueprints");
+        Assert.Equal(["", "PTU"], setup.Store.Load().Logs.Values.Select(l => l.Channel).OrderBy(c => c));
+
+        // The same file later written by the LIVE game counts.
+        setup.Install.Log("Game.log", Blueprint + "\n" + "<2026-04-02T11:00:00Z> more\n");
+        Assert.Equal(1, (await setup.Engine.RunAsync(One, CancellationToken.None, prepareOnly: true)).NewBlueprints);
+    }
+
+    [Fact]
+    public async Task Hotfix_logs_count_like_LIVE_because_their_progress_carries_over()
+    {
+        using var setup = new Setup();
+        setup.Install.Log("logbackups/hotfix.log", Blueprint + "\n", channel: "HOTFIX");
+        Assert.Equal(1, (await setup.Engine.RunAsync(One, CancellationToken.None, prepareOnly: true)).NewBlueprints);
+    }
+
+    [Fact]
+    public async Task Logs_read_before_the_channel_rule_are_read_once_more()
+    {
+        using var setup = new Setup();
+        setup.Install.Log("Game.log", Blueprint + "\n", channel: "PTU");
+        var file = new FileInfo(Path.Combine(setup.Install.Live, "Game.log"));
+        var state = setup.Store.Load();
+        // An entry saved by an older Companion: no channel, and it claims a blueprint.
+        state.Logs["Game.log"] = new LogFile { Size = file.Length, Written = file.LastWriteTimeUtc, Channel = null, Blueprints = [new("Arclight Pistol", DateTimeOffset.UtcNow)] };
+        setup.Store.Save(state);
+        var report = await setup.Engine.RunAsync(One, CancellationToken.None, prepareOnly: true);
+        Assert.Equal(0, report.NewBlueprints);
+        Assert.Equal("PTU", setup.Store.Load().Logs["Game.log"].Channel);
+    }
+
+    [Fact]
     public async Task Preparation_sends_findings_but_never_downloads_or_installs()
     {
         using var setup = new Setup(); setup.Install.Log("Game.log", Blueprint + "\n");

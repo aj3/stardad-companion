@@ -53,16 +53,19 @@ public sealed class LogFile
 {
     public long Size { get; set; }
     public DateTime Written { get; set; }
+    /// <summary>The game channel the log names (LIVE, PTU...); empty when it names none. Only LIVE logs give findings.</summary>
+    public string? Channel { get; set; }
     public List<Blueprint> Blueprints { get; set; } = [];
     public Dictionary<string, string> Completed { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public static LogFile From(FileInfo file, LogFindings found) => new()
+    public static LogFile From(FileInfo file, LogFindings found, string? channel) => new()
     {
-        Size = file.Length, Written = file.LastWriteTimeUtc,
+        Size = file.Length, Written = file.LastWriteTimeUtc, Channel = channel ?? "",
         Blueprints = [.. found.Blueprints.Values], Completed = new(found.Completed, StringComparer.OrdinalIgnoreCase),
     };
 
-    public bool Matches(FileInfo file) => Size == file.Length && Written == file.LastWriteTimeUtc;
+    /// <summary>Unchanged since it was read, and read under the channel rule (older entries get read once more).</summary>
+    public bool Matches(FileInfo file) => Channel is not null && Size == file.Length && Written == file.LastWriteTimeUtc;
 
     public void AddTo(LogFindings findings)
     {

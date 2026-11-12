@@ -37,6 +37,32 @@ public sealed class InstallWriter(string dataFolder, Func<bool>? gameRunning = n
         return running.Length > 0;
     }
 
+    /// <summary>
+    /// The game's program is running, but with no window of its own: the launcher runs it this way to compile
+    /// shaders. Nothing can be installed until it exits either way; this only chooses the words. Reads this PC's
+    /// process list and window handles, nothing inside the game.
+    /// </summary>
+    public static bool GameIsInBackground()
+    {
+        var running = Process.GetProcessesByName("StarCitizen");
+        try
+        {
+            if (running.Length == 0) return false;
+            foreach (var process in running)
+            {
+                try { if (process.MainWindowHandle != IntPtr.Zero) return false; }
+                catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { return false; }
+            }
+            return true;
+        }
+        finally { foreach (var process in running) process.Dispose(); }
+    }
+
+    /// <summary>What to tell the player while an update waits for the game's program to exit.</summary>
+    public static string QueuedMessage(bool background) => background
+        ? "Update queued on this PC. Star Citizen is busy in the background (the launcher compiles shaders this way). Your file installs when it finishes."
+        : "Update queued on this PC. Close the game, then wait for Installed before starting it again.";
+
     public static string Sha256(byte[] content) => Convert.ToHexStringLower(SHA256.HashData(content));
 
     public static string Sha256File(string path)

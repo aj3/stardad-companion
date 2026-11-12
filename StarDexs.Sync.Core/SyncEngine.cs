@@ -180,7 +180,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
                     state.PendingInstall = new(account!, state.GameFolder!, file.Patch, file.Settings,
                         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(file.Data)).ToLowerInvariant(), file.Data, runId);
                     store.Save(state); // Atomic state replacement includes the complete file and its metadata.
-                    return Done(state, Report("Update queued on this PC. Close the game, then wait for Installed before starting it again.", waiting: true));
+                    return Done(state, Report(InstallWriter.QueuedMessage(InstallWriter.GameIsInBackground()), waiting: true));
                 case WriteOutcome.UnknownFile: return Done(state, Report(result.Message, unknown: true));
                 default: return Done(state, Report(result.Message));
             }
@@ -208,7 +208,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
     {
         var state = store.Load();
         if (state.PendingInstall is not { } pending) return new SyncReport("No update queued.");
-        if (InstallWriter.GameIsRunning()) return new SyncReport("Update queued. Close the game and wait for Installed before restarting it.", WaitingForGame: true);
+        if (writer.GameRunning) return new SyncReport(InstallWriter.QueuedMessage(InstallWriter.GameIsInBackground()), WaitingForGame: true);
         if (!state.InstallAgreed || state.GameFolder != pending.Folder || store.Token(state, pending.Account) is not { } token)
             return new SyncReport("Queued update needs its original account, game folder and install permission.");
         if (!InstallWriter.LooksLikeGlobalIni(pending.Data) || InstallWriter.Sha256(pending.Data) != pending.Sha256)

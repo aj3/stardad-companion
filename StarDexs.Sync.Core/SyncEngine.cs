@@ -145,6 +145,7 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
             TakeSchedule(state.Accounts[account!], status.Schedule);
             state.Accounts[account!].BackupKeybinds=status.KeybindBackup;
             var keybindNote=status.KeybindBackup?await BackUpKeybindsAsync(state,account!,token,status.Patch,cancel):"";
+            keybindNote+=status.CharacterBackup?await BackUpCharactersAsync(state,token,cancel):"";
             SyncReport Report(string message, bool installed = false, bool permission = false, bool waiting = false, bool unknown = false) =>
                 new(message+keybindNote, installed, permission, false, waiting, unknown, blueprints, completed, status.HelperLatest);
 
@@ -352,6 +353,60 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
         };
     }
 
+    /// <summary>
+    /// Backs up custom characters (.chf) the account doesn't hold in this exact form, compared by name and
+    /// fingerprint with the website's list, in batches. Files deleted from the PC are never deleted from the website.
+    /// A problem is reported and leaves the sync itself alone.
+    /// </summary>
+    private async Task<string> BackUpCharactersAsync(SyncState state, string token, CancellationToken cancel)
+    {
+        int found = 0, sent = 0, skipped = 0; string? problem = null;
+        try
+        {
+            var (names, odd) = CharacterFiles.List(state.GameFolder!);
+            found = names.Count; skipped = odd;
+            if (names.Count > 0)
+            {
+                var held = (await api.CharactersAsync(token, cancel)).ToDictionary(c => c.Name.ToUpperInvariant(), c => c.Sha256);
+                var batch = new List<(string, byte[])>();
+                async Task Flush() { if (batch.Count == 0) return; sent += await api.UploadCharactersAsync(token, batch, cancel); batch.Clear(); }
+                foreach (var name in names)
+                {
+                    byte[] data;
+                    try { data = CharacterFiles.Read(state.GameFolder!, name); }
+                    catch (InvalidDataException) { skipped++; continue; }
+                    if (held.TryGetValue(name.ToUpperInvariant(), out var hash) && hash == CharacterFiles.Hash(data)) continue;
+                    batch.Add((name, data));
+                    if (batch.Count == 25) await Flush();
+                }
+                await Flush();
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or HttpRequestException or InvalidDataException) { problem = e.Message; }
+        try { await api.CharactersCheckedAsync(token, found, sent, skipped, problem, cancel); }
+        catch (HttpRequestException) { /* An older website doesn't take the counts. */ }
+        if (problem is not null) return " Character backup needs attention; backups already saved are kept.";
+        return sent > 0 ? $" Backed up {sent} custom character{(sent == 1 ? "" : "s")}." : "";
+    }
+
+    /// <summary>Adds back every backed-up character that's missing from this PC's folder; characters already there are left alone.</summary>
+    private async Task<SyncReport> RestoreCharactersAsync(SyncState state, string token, CancellationToken cancel)
+    {
+        var (present, _) = CharacterFiles.List(state.GameFolder!);
+        var have = present.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        int added = 0, kept = 0;
+        foreach (var copy in await api.CharactersAsync(token, cancel))
+        {
+            if (have.Contains(copy.Name)) { kept++; continue; }
+            if (writer.GameRunning) return new SyncReport($"Added {added} character{(added == 1 ? "" : "s")}, then the game started. Close it and ask again for the rest.");
+            var file = await api.DownloadCharacterAsync(token, copy.Id, cancel);
+            if (CharacterFiles.AddMissing(state.GameFolder!, file.Name, file.Data, file.Sha256, () => writer.GameRunning)) added++; else kept++;
+        }
+        return new SyncReport(added == 0
+            ? "Every backed-up character was already on this PC; nothing was changed."
+            : $"Added {added} missing custom character{(added == 1 ? "" : "s")}. {kept} already there {(kept == 1 ? "was" : "were")} left alone.", Completed: true);
+    }
+
     private async Task<(int Blueprints, int Completed)> SendLogsAsync(SyncState state, string token, Func<Task> sending, CancellationToken cancel)
     {
         var findings = new LogFindings();
@@ -478,6 +533,11 @@ public sealed class SyncEngine(SyncApi api, StateStore store, InstallWriter writ
                 }
                 catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or HttpRequestException or InvalidOperationException)
                 { report = new SyncReport("Couldn't restore that profile: " + e.Message); }
+                break;
+            case PcAction.RestoreCharacters when GameFolder.IsLive(state.GameFolder):
+                try { report = await RestoreCharactersAsync(state, token, cancel); }
+                catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or HttpRequestException)
+                { report = new SyncReport("Couldn't restore characters: " + e.Message); }
                 break;
             default: report = new SyncReport("This PC's StarDad Companion couldn't do that; update it and try again."); break;
         }

@@ -17,10 +17,13 @@ public sealed record PcSettings(bool AutoUpdate, bool StartWithWindows, DateTime
 /// <summary>Something the player asked for on the website for this PC: put the previous file back, remove StarDad, or restore a keybind profile.</summary>
 public sealed record PcAction(string Id, string Kind, string? Keybind)
 {
-    public const string RestorePrevious = "restore-previous", Remove = "remove", RestoreKeybind = "restore-keybind";
+    public const string RestorePrevious = "restore-previous", Remove = "remove", RestoreKeybind = "restore-keybind", RestoreCharacters = "restore-characters";
 }
 
-public sealed record SyncStatus(string? Patch, string Settings, bool HasSettings, string? Account = null, string? HelperLatest = null, SyncSchedule? Schedule = null, bool KeybindBackup = false);
+public sealed record SyncStatus(string? Patch, string Settings, bool HasSettings, string? Account = null, string? HelperLatest = null, SyncSchedule? Schedule = null, bool KeybindBackup = false, bool CharacterBackup = false);
+/// <summary>A custom character the account holds: its id for download, file name and fingerprint.</summary>
+public sealed record CharacterCopy(string Id, string Name, string Sha256);
+public sealed record CharacterDownload(string Name, byte[] Data, string Sha256);
 public sealed record KeybindCopy(string Id,string Name,string Source,string Created,string Sha256);
 public sealed record KeybindDownload(string Name,byte[] Data,string Sha256);
 public sealed record SyncFile(byte[] Data, string Patch, string Settings);
@@ -73,7 +76,8 @@ public sealed class SyncApi(HttpClient http)
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/sync/status");
         var body = await SendJsonAsync(request, token, cancel);
         return new SyncStatus(OptionalText(body, "patch"), Text(body, "settings"), body?["has_settings"] is JsonValue flag && flag.TryGetValue<bool>(out var has) && has,
-            OptionalText(body, "account"), OptionalText(body, "helper_latest"), Schedule(body?["schedule"]), body?["keybind_backup"] is JsonValue backup && backup.TryGetValue<bool>(out var enabled) && enabled);
+            OptionalText(body, "account"), OptionalText(body, "helper_latest"), Schedule(body?["schedule"]), body?["keybind_backup"] is JsonValue backup && backup.TryGetValue<bool>(out var enabled) && enabled,
+            body?["character_backup"] is JsonValue characters && characters.TryGetValue<bool>(out var charactersOn) && charactersOn);
     }
 
     /// <summary>
@@ -103,7 +107,7 @@ public sealed class SyncApi(HttpClient http)
         var keybind = OptionalText(action, "keybind");
         return kind switch
         {
-            PcAction.RestorePrevious or PcAction.Remove => new PcAction(id, kind, null),
+            PcAction.RestorePrevious or PcAction.Remove or PcAction.RestoreCharacters => new PcAction(id, kind, null),
             PcAction.RestoreKeybind when keybind is { Length: > 0 and <= 64 } && System.Text.RegularExpressions.Regex.IsMatch(keybind, "^[A-Za-z0-9-]+$") => new PcAction(id, kind, keybind),
             _ => null,
         };
@@ -226,6 +230,40 @@ public sealed class SyncApi(HttpClient http)
         if(KeybindFiles.Hash(data)!=hash)throw new HttpRequestException("The profile failed its integrity check.");return new(name,data,hash);
     }
 
+    /// <summary>The custom characters the account holds (name and fingerprint), to send only new or changed ones.</summary>
+    public async Task<IReadOnlyList<CharacterCopy>> CharactersAsync(string token, CancellationToken cancel)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "api/sync/characters");
+        var body = await SendJsonAsync(request, token, cancel, 512 * 1024);
+        if (body?["characters"] is not JsonArray rows) throw new HttpRequestException("StarDad sent no character list.");
+        if (rows.Count > CharacterFiles.MaxCharacters) throw new HttpRequestException("The character list exceeded its limit.");
+        return rows.Select(row => new CharacterCopy(Text(row, "id"), Text(row, "name"), Text(row, "sha256"))).ToArray();
+    }
+
+    /// <summary>Sends up to 25 character files in one request; returns how many the website stored as new or changed.</summary>
+    public async Task<int> UploadCharactersAsync(string token, IReadOnlyList<(string Name, byte[] Data)> files, CancellationToken cancel)
+    {
+        var list = new JsonArray();
+        foreach (var (name, data) in files) { CharacterFiles.Validate(name, data); list.Add(new JsonObject { ["name"] = name, ["data"] = Convert.ToBase64String(data) }); }
+        var body = await PostAsync("api/sync/characters", new JsonObject { ["characters"] = list }, token, cancel);
+        return body?["changed"] is JsonValue value && value.TryGetValue<int>(out var changed) ? changed : 0;
+    }
+
+    /// <summary>What this sync's character pass found: files seen, sent, skipped, and any problem.</summary>
+    public async Task CharactersCheckedAsync(string token, int found, int sent, int skipped, string? problem, CancellationToken cancel) =>
+        await PostAsync("api/sync/characters/checked", new JsonObject { ["found"] = found, ["sent"] = sent, ["skipped"] = skipped, ["problem"] = problem is null ? null : problem[..Math.Min(problem.Length, 200)] }, token, cancel);
+
+    public async Task<CharacterDownload> DownloadCharacterAsync(string token, string id, CancellationToken cancel)
+    {
+        if (!Guid.TryParseExact(id, "N", out _)) throw new HttpRequestException("The character id is invalid.");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "api/sync/characters/" + id); request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel); Check(response);
+        var name = response.Headers.TryGetValues("X-StarDad-Character-Name", out var names) ? Uri.UnescapeDataString(names.Single()) : "";
+        var hash = response.Headers.TryGetValues("X-StarDad-Character-Sha", out var hashes) ? hashes.Single() : "";
+        var data = await HttpBody.ReadAsync(response, CharacterFiles.MaxBytes, cancel); CharacterFiles.Validate(name, data);
+        if (CharacterFiles.Hash(data) != hash) throw new HttpRequestException("A character failed its integrity check."); return new(name, data, hash);
+    }
+
     private async Task<JsonNode?> PostAsync(string path, JsonObject body, string? token, CancellationToken cancel)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, path)
@@ -235,12 +273,12 @@ public sealed class SyncApi(HttpClient http)
         return await SendJsonAsync(request, token, cancel);
     }
 
-    private async Task<JsonNode?> SendJsonAsync(HttpRequestMessage request, string? token, CancellationToken cancel)
+    private async Task<JsonNode?> SendJsonAsync(HttpRequestMessage request, string? token, CancellationToken cancel, int maxBytes = 64 * 1024)
     {
         if (token is not null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel);
         Check(response);
-        var bytes = await HttpBody.ReadAsync(response, 64 * 1024, cancel);
+        var bytes = await HttpBody.ReadAsync(response, maxBytes, cancel);
         try {
             var body = bytes.Length == 0 ? null : JsonNode.Parse(bytes);
             if (body is not null and not JsonObject) throw new HttpRequestException("The StarDad response was not an object.");

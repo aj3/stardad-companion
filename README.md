@@ -41,6 +41,14 @@ used for reading; installation permission remains a separate panel action.
 Replacing an unrelated file, granting Windows access, restoring/removing files and
 unlinking still require an explicit action and confirmation.
 
+## Custom character backups
+
+Each sync also backs up the custom characters in `LIVE\user\client\0\CustomCharacters`
+(`.chf` files, up to 1,000 of up to 64 KiB each) to your account, sending only new or changed
+ones. It is on for every linked PC; turn it off per PC on the website (Settings, Characters). A
+backup stays when the file leaves your PC. Restoring only adds characters that are missing from
+the folder: it never replaces or deletes one that is there.
+
 ## Keybind backups
 
 Unreleased validation preview: Settings also offers an explicitly enabled local
